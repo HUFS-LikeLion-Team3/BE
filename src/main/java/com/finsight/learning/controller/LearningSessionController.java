@@ -6,6 +6,7 @@ import com.finsight.learning.dto.LearningSessionCreateResponse;
 import com.finsight.learning.dto.LearningSessionListResponse;
 import com.finsight.learning.entity.LearningSession;
 import com.finsight.learning.service.LearningSessionService;
+import com.finsight.learning.dto.LearningSessionDetailResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -120,5 +121,31 @@ public class LearningSessionController {
         return ResponseEntity.ok(
                 LearningSessionListResponse.from(sessions)
         );
+    }
+
+    @GetMapping("/{learningSessionId}")
+    public ResponseEntity<LearningSessionDetailResponse> findById(
+            @PathVariable String learningSessionId
+    ) {
+        UUID sessionId;
+
+        try {
+            sessionId = UUID.fromString(learningSessionId);
+        } catch (IllegalArgumentException e) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "학습 세션 ID 형식이 올바르지 않습니다."
+            );
+        }
+
+        UUID userId = UUID.randomUUID();
+
+        LearningSessionDetailResponse response =
+                learningSessionService.findById(
+                        userId,
+                        sessionId
+                );
+
+        return ResponseEntity.ok(response);
     }
 }

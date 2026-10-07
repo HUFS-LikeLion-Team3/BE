@@ -1,6 +1,7 @@
 package com.finsight.learning.service;
 
 import com.finsight.global.exception.ApiException;
+import com.finsight.learning.dto.LearningSessionDetailResponse;
 import com.finsight.learning.dto.LearningSessionListItemResponse;
 import com.finsight.learning.entity.LearningSession;
 import com.finsight.learning.repository.LearningSessionRepository;
@@ -70,6 +71,27 @@ public class LearningSessionService {
                         pageable
                 )
                 .map(LearningSessionListItemResponse::from);
+    }
+
+    public LearningSessionDetailResponse findById(
+            UUID userId,
+            UUID learningSessionId
+    ) {
+        LearningSession session =
+                learningSessionRepository.findById(learningSessionId)
+                        .orElseThrow(() -> new ApiException(
+                                HttpStatus.NOT_FOUND,
+                                "학습 세션을 찾을 수 없습니다."
+                        ));
+
+        if (!session.getUserId().equals(userId)) {
+            throw new ApiException(
+                    HttpStatus.FORBIDDEN,
+                    "해당 학습 세션을 조회할 권한이 없습니다."
+            );
+        }
+
+        return LearningSessionDetailResponse.from(session);
     }
 
     public record SessionResult(

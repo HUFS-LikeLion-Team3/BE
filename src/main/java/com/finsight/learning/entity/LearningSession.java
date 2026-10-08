@@ -79,6 +79,10 @@ public class LearningSession {
         updatedAt = OffsetDateTime.now();
     }
 
+    public void markSaved() {
+        this.savedAt = OffsetDateTime.now();
+    }
+
     public enum SessionType {
         live,
         replay

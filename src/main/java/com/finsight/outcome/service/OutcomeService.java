@@ -3,13 +3,16 @@ package com.finsight.outcome.service;
 import com.finsight.global.exception.ApiException;
 import com.finsight.learning.entity.LearningSession;
 import com.finsight.learning.repository.LearningSessionRepository;
+import com.finsight.outcome.dto.OutcomeEventResponse;
 import com.finsight.outcome.dto.OutcomeResponse;
 import com.finsight.outcome.dto.OutcomeSeriesResponse;
 import com.finsight.outcome.dto.TargetOutcomeResponse;
 import com.finsight.outcome.entity.MarketObservation;
+import com.finsight.outcome.entity.OutcomeCollectionEvent;
 import com.finsight.outcome.entity.OutcomeSeriesPoint;
 import com.finsight.outcome.entity.SessionTargetBaseline;
 import com.finsight.outcome.repository.MarketObservationRepository;
+import com.finsight.outcome.repository.OutcomeCollectionEventRepository;
 import com.finsight.outcome.repository.OutcomeSeriesPointRepository;
 import com.finsight.outcome.repository.SessionTargetBaselineRepository;
 import com.finsight.prediction.entity.SessionTarget;
@@ -33,6 +36,7 @@ public class OutcomeService {
     private final SessionTargetBaselineRepository sessionTargetBaselineRepository;
     private final MarketObservationRepository marketObservationRepository;
     private final OutcomeSeriesPointRepository outcomeSeriesPointRepository;
+    private final OutcomeCollectionEventRepository outcomeCollectionEventRepository;
 
     public OutcomeResponse findAll(
             UUID userId,
@@ -157,6 +161,51 @@ public class OutcomeService {
                 sessionTarget,
                 seriesPoints
         );
+    }
+
+    public List<OutcomeEventResponse> findEvents(
+            UUID userId,
+            UUID sessionTargetId
+    ) {
+        SessionTarget sessionTarget =
+                sessionTargetRepository.findById(sessionTargetId)
+                        .orElseThrow(() -> new ApiException(
+                                HttpStatus.NOT_FOUND,
+                                "요청한 세션 또는 기록을 찾을 수 없습니다."
+                        ));
+
+        LearningSession session =
+                learningSessionRepository
+                        .findById(sessionTarget.getLearningSessionId())
+                        .orElseThrow(() -> new ApiException(
+                                HttpStatus.NOT_FOUND,
+                                "요청한 세션 또는 기록을 찾을 수 없습니다."
+                        ));
+
+        if (!session.getUserId().equals(userId)) {
+            throw new ApiException(
+                    HttpStatus.FORBIDDEN,
+                    "해당 기록에 접근할 권한이 없습니다."
+            );
+        }
+
+        if (session.getSubmittedAt() == null
+                || !sessionTarget.isSelected()) {
+            throw new ApiException(
+                    HttpStatus.NOT_FOUND,
+                    "요청한 세션 또는 기록을 찾을 수 없습니다."
+            );
+        }
+
+        List<OutcomeCollectionEvent> events =
+                outcomeCollectionEventRepository
+                        .findAllBySessionTargetIdOrderByOccurredAtAscIdAsc(
+                                sessionTargetId
+                        );
+
+        return events.stream()
+                .map(OutcomeEventResponse::from)
+                .toList();
     }
 
     private SessionTarget findSelectedTarget(

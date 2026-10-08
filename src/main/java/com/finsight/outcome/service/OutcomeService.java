@@ -4,6 +4,7 @@ import com.finsight.global.exception.ApiException;
 import com.finsight.learning.entity.LearningSession;
 import com.finsight.learning.repository.LearningSessionRepository;
 import com.finsight.outcome.dto.OutcomeResponse;
+import com.finsight.outcome.dto.TargetOutcomeResponse;
 import com.finsight.outcome.entity.MarketObservation;
 import com.finsight.outcome.entity.SessionTargetBaseline;
 import com.finsight.outcome.repository.MarketObservationRepository;
@@ -26,10 +27,8 @@ public class OutcomeService {
 
     private final LearningSessionRepository learningSessionRepository;
     private final SessionTargetRepository sessionTargetRepository;
-    private final SessionTargetBaselineRepository
-            sessionTargetBaselineRepository;
-    private final MarketObservationRepository
-            marketObservationRepository;
+    private final SessionTargetBaselineRepository sessionTargetBaselineRepository;
+    private final MarketObservationRepository marketObservationRepository;
 
     public OutcomeResponse findAll(
             UUID userId,
@@ -72,28 +71,85 @@ public class OutcomeService {
         );
     }
 
+    public TargetOutcomeResponse findOne(
+            UUID userId,
+            UUID learningSessionId,
+            UUID sessionTargetId
+    ) {
+        LearningSession session =
+                learningSessionRepository.findById(learningSessionId)
+                        .orElseThrow(() -> new ApiException(
+                                HttpStatus.NOT_FOUND,
+                                "학습 세션 또는 예측 대상을 찾을 수 없습니다."
+                        ));
+
+        if (!session.getUserId().equals(userId)) {
+            throw new ApiException(
+                    HttpStatus.FORBIDDEN,
+                    "해당 시장 결과에 접근할 권한이 없습니다."
+            );
+        }
+
+        SessionTarget sessionTarget =
+                sessionTargetRepository
+                        .findAllByLearningSessionId(learningSessionId)
+                        .stream()
+                        .filter(target ->
+                                target.getId().equals(sessionTargetId)
+                        )
+                        .filter(SessionTarget::isSelected)
+                        .findFirst()
+                        .orElseThrow(() -> new ApiException(
+                                HttpStatus.NOT_FOUND,
+                                "학습 세션 또는 예측 대상을 찾을 수 없습니다."
+                        ));
+
+        SessionTargetBaseline baseline =
+                findBaseline(sessionTargetId);
+
+        List<MarketObservation> observations =
+                findObservations(sessionTargetId);
+
+        return TargetOutcomeResponse.from(
+                learningSessionId,
+                sessionTarget,
+                baseline,
+                observations
+        );
+    }
+
     private OutcomeResponse.TargetResponse createTargetResponse(
             SessionTarget sessionTarget
     ) {
         SessionTargetBaseline baseline =
-                sessionTargetBaselineRepository
-                        .findBySessionTargetId(sessionTarget.getId())
-                        .orElseThrow(() ->
-                                new IllegalStateException(
-                                        "시장 기준값 데이터가 존재하지 않습니다."
-                                )
-                        );
+                findBaseline(sessionTarget.getId());
 
         List<MarketObservation> observations =
-                marketObservationRepository
-                        .findAllBySessionTargetIdOrderByHorizonAsc(
-                                sessionTarget.getId()
-                        );
+                findObservations(sessionTarget.getId());
 
         return OutcomeResponse.TargetResponse.from(
                 sessionTarget,
                 baseline,
                 observations
         );
+    }
+
+    private SessionTargetBaseline findBaseline(
+            UUID sessionTargetId
+    ) {
+        return sessionTargetBaselineRepository
+                .findBySessionTargetId(sessionTargetId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "시장 기준값 데이터가 존재하지 않습니다."
+                ));
+    }
+
+    private List<MarketObservation> findObservations(
+            UUID sessionTargetId
+    ) {
+        return marketObservationRepository
+                .findAllBySessionTargetIdOrderByHorizonAsc(
+                        sessionTargetId
+                );
     }
 }

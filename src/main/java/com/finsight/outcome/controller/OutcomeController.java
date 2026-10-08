@@ -2,6 +2,7 @@ package com.finsight.outcome.controller;
 
 import com.finsight.global.exception.ApiException;
 import com.finsight.outcome.dto.OutcomeResponse;
+import com.finsight.outcome.dto.OutcomeSeriesResponse;
 import com.finsight.outcome.dto.TargetOutcomeResponse;
 import com.finsight.outcome.service.OutcomeService;
 import lombok.RequiredArgsConstructor;
@@ -52,6 +53,29 @@ public class OutcomeController {
 
         return ResponseEntity.ok(
                 outcomeService.findOne(
+                        userId,
+                        parsedLearningSessionId,
+                        parsedSessionTargetId
+                )
+        );
+    }
+
+    @GetMapping("/{learningSessionId}/targets/{sessionTargetId}/series")
+    public ResponseEntity<OutcomeSeriesResponse> findSeries(
+            @PathVariable String learningSessionId,
+            @PathVariable String sessionTargetId
+    ) {
+        UUID parsedLearningSessionId =
+                parseLearningSessionId(learningSessionId);
+
+        UUID parsedSessionTargetId =
+                parseSessionTargetId(sessionTargetId);
+
+        // TODO 인증 연동 후 로그인 사용자 ID로 교체
+        UUID userId = UUID.randomUUID();
+
+        return ResponseEntity.ok(
+                outcomeService.findSeries(
                         userId,
                         parsedLearningSessionId,
                         parsedSessionTargetId

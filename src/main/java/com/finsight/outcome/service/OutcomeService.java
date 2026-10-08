@@ -4,10 +4,13 @@ import com.finsight.global.exception.ApiException;
 import com.finsight.learning.entity.LearningSession;
 import com.finsight.learning.repository.LearningSessionRepository;
 import com.finsight.outcome.dto.OutcomeResponse;
+import com.finsight.outcome.dto.OutcomeSeriesResponse;
 import com.finsight.outcome.dto.TargetOutcomeResponse;
 import com.finsight.outcome.entity.MarketObservation;
+import com.finsight.outcome.entity.OutcomeSeriesPoint;
 import com.finsight.outcome.entity.SessionTargetBaseline;
 import com.finsight.outcome.repository.MarketObservationRepository;
+import com.finsight.outcome.repository.OutcomeSeriesPointRepository;
 import com.finsight.outcome.repository.SessionTargetBaselineRepository;
 import com.finsight.prediction.entity.SessionTarget;
 import com.finsight.prediction.repository.SessionTargetRepository;
@@ -29,6 +32,7 @@ public class OutcomeService {
     private final SessionTargetRepository sessionTargetRepository;
     private final SessionTargetBaselineRepository sessionTargetBaselineRepository;
     private final MarketObservationRepository marketObservationRepository;
+    private final OutcomeSeriesPointRepository outcomeSeriesPointRepository;
 
     public OutcomeResponse findAll(
             UUID userId,
@@ -91,18 +95,10 @@ public class OutcomeService {
         }
 
         SessionTarget sessionTarget =
-                sessionTargetRepository
-                        .findAllByLearningSessionId(learningSessionId)
-                        .stream()
-                        .filter(target ->
-                                target.getId().equals(sessionTargetId)
-                        )
-                        .filter(SessionTarget::isSelected)
-                        .findFirst()
-                        .orElseThrow(() -> new ApiException(
-                                HttpStatus.NOT_FOUND,
-                                "학습 세션 또는 예측 대상을 찾을 수 없습니다."
-                        ));
+                findSelectedTarget(
+                        learningSessionId,
+                        sessionTargetId
+                );
 
         SessionTargetBaseline baseline =
                 findBaseline(sessionTargetId);
@@ -116,6 +112,69 @@ public class OutcomeService {
                 baseline,
                 observations
         );
+    }
+
+    public OutcomeSeriesResponse findSeries(
+            UUID userId,
+            UUID learningSessionId,
+            UUID sessionTargetId
+    ) {
+        LearningSession session =
+                learningSessionRepository.findById(learningSessionId)
+                        .orElseThrow(() -> new ApiException(
+                                HttpStatus.NOT_FOUND,
+                                "학습 세션 또는 예측 대상을 찾을 수 없습니다."
+                        ));
+
+        if (!session.getUserId().equals(userId)) {
+            throw new ApiException(
+                    HttpStatus.FORBIDDEN,
+                    "해당 시장 결과에 접근할 권한이 없습니다."
+            );
+        }
+
+        if (session.getSubmittedAt() == null) {
+            throw new ApiException(
+                    HttpStatus.FORBIDDEN,
+                    "해당 시장 결과에 접근할 권한이 없습니다."
+            );
+        }
+
+        SessionTarget sessionTarget =
+                findSelectedTarget(
+                        learningSessionId,
+                        sessionTargetId
+                );
+
+        List<OutcomeSeriesPoint> seriesPoints =
+                outcomeSeriesPointRepository
+                        .findAllBySessionTargetIdOrderByTradingDateAsc(
+                                sessionTargetId
+                        );
+
+        return OutcomeSeriesResponse.from(
+                learningSessionId,
+                sessionTarget,
+                seriesPoints
+        );
+    }
+
+    private SessionTarget findSelectedTarget(
+            UUID learningSessionId,
+            UUID sessionTargetId
+    ) {
+        return sessionTargetRepository
+                .findAllByLearningSessionId(learningSessionId)
+                .stream()
+                .filter(target ->
+                        target.getId().equals(sessionTargetId)
+                )
+                .filter(SessionTarget::isSelected)
+                .findFirst()
+                .orElseThrow(() -> new ApiException(
+                        HttpStatus.NOT_FOUND,
+                        "학습 세션 또는 예측 대상을 찾을 수 없습니다."
+                ));
     }
 
     private OutcomeResponse.TargetResponse createTargetResponse(

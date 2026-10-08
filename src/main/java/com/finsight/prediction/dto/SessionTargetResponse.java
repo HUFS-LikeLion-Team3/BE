@@ -6,16 +6,15 @@ import java.util.List;
 import java.util.UUID;
 
 public record SessionTargetResponse(
-        UUID sessionId,
+        UUID learningSessionId,
         List<SessionTargetItemResponse> targets
 ) {
-
     public static SessionTargetResponse from(
-            UUID sessionId,
+            UUID learningSessionId,
             List<SessionTarget> sessionTargets
     ) {
         return new SessionTargetResponse(
-                sessionId,
+                learningSessionId,
                 sessionTargets.stream()
                         .map(SessionTargetItemResponse::from)
                         .toList()

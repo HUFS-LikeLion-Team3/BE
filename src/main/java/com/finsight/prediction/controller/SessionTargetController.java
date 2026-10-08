@@ -18,12 +18,12 @@ public class SessionTargetController {
 
     private final SessionTargetService sessionTargetService;
 
-    @PutMapping("/{sessionId}/targets")
+    @PutMapping("/{learningSessionId}/targets")
     public ResponseEntity<SessionTargetResponse> update(
-            @PathVariable String sessionId,
+            @PathVariable String learningSessionId,
             @RequestBody SessionTargetUpdateRequest request
     ) {
-        UUID learningSessionId = parseSessionId(sessionId);
+        UUID sessionId = parseLearningSessionId(learningSessionId);
 
         // TODO: 인증 기능 구현 후 실제 로그인 userId로 교체
         UUID userId = UUID.randomUUID();
@@ -31,18 +31,18 @@ public class SessionTargetController {
         SessionTargetResponse response =
                 sessionTargetService.update(
                         userId,
-                        learningSessionId,
+                        sessionId,
                         request
                 );
 
         return ResponseEntity.ok(response);
     }
 
-    @GetMapping("/{sessionId}/targets")
+    @GetMapping("/{learningSessionId}/targets")
     public ResponseEntity<SessionTargetResponse> findAll(
-            @PathVariable String sessionId
+            @PathVariable String learningSessionId
     ) {
-        UUID learningSessionId = parseSessionId(sessionId);
+        UUID sessionId = parseLearningSessionId(learningSessionId);
 
         // TODO: 인증 기능 구현 후 실제 로그인 userId로 교체
         UUID userId = UUID.randomUUID();
@@ -50,15 +50,15 @@ public class SessionTargetController {
         SessionTargetResponse response =
                 sessionTargetService.findAll(
                         userId,
-                        learningSessionId
+                        sessionId
                 );
 
         return ResponseEntity.ok(response);
     }
 
-    private UUID parseSessionId(String sessionId) {
+    private UUID parseLearningSessionId(String learningSessionId) {
         try {
-            return UUID.fromString(sessionId);
+            return UUID.fromString(learningSessionId);
         } catch (IllegalArgumentException e) {
             throw new ApiException(
                     HttpStatus.BAD_REQUEST,

@@ -83,6 +83,12 @@ public class LearningSession {
         this.savedAt = OffsetDateTime.now();
     }
 
+    // Used only after the final reflection and all its notes are saved in one transaction.
+    public void markCompleted(OffsetDateTime completedAt) {
+        this.status = LearningStatus.completed;
+        this.completedAt = completedAt;
+    }
+
     public enum SessionType {
         live,
         replay

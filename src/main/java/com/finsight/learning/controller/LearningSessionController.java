@@ -16,11 +16,14 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
+import com.finsight.global.security.CurrentUser;
 
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/learning-sessions")
 public class LearningSessionController {
+
+    private final CurrentUser currentUser;
 
     private final LearningSessionService learningSessionService;
 
@@ -28,7 +31,7 @@ public class LearningSessionController {
     public ResponseEntity<LearningSessionCreateResponse> create(
             @Valid @RequestBody LearningSessionCreateRequest request
     ) {
-        UUID userId = UUID.randomUUID();
+        UUID userId = currentUser.id();
 
         LearningSessionService.SessionResult result =
                 learningSessionService.createOrGet(
@@ -57,7 +60,7 @@ public class LearningSessionController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
-        UUID userId = UUID.randomUUID();
+        UUID userId = currentUser.id();
 
         if (page < 0) {
             throw new ApiException(
@@ -138,7 +141,7 @@ public class LearningSessionController {
             );
         }
 
-        UUID userId = UUID.randomUUID();
+        UUID userId = currentUser.id();
 
         LearningSessionDetailResponse response =
                 learningSessionService.findById(

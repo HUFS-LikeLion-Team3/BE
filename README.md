@@ -2,6 +2,82 @@
 
 FinSight 백엔드 프로젝트입니다.
 
+## 카카오 로그인 (P0)
+
+`POST /api/v1/auth/kakao`는 인증 없이 JSON 인가 코드를 받고 서비스 Bearer 토큰을 반환합니다.
+세션 쿠키, CSRF 토큰, refresh token API는 사용하지 않습니다. 토큰 유효기간은 기본 1시간입니다.
+
+### 환경 변수
+
+```text
+KAKAO_CLIENT_ID=카카오 REST API 키
+KAKAO_CLIENT_SECRET=카카오 Client Secret
+KAKAO_REDIRECT_URI=http://localhost:3000/auth/kakao/callback
+TERMS_VERSION=실제 현재 이용약관 버전
+PRIVACY_POLICY_VERSION=실제 현재 개인정보 처리방침 버전
+ACCESS_TOKEN_TTL_SECONDS=3600
+```
+
+Redirect URI는 프런트엔드의 인가 코드 수신 주소입니다. 카카오 콘솔 등록값, 인가 코드 요청의
+`redirect_uri`, 서버의 `KAKAO_REDIRECT_URI`가 모두 동일해야 합니다.
+기존 `/oauth2/authorization/kakao`, `/login/oauth2/code/kakao` 세션 로그인 경로는 사용하지 않습니다.
+키는 환경 변수에만 넣고 소스에 저장하지 않습니다.
+
+### 로그인·가입
+
+프런트엔드 로그인 페이지는 현재 이용약관과 개인정보 처리방침의 동의 안내를 보여준 후
+카카오 인가를 시작하고, 콜백에서 받은 코드를 아래 API로 전달해야 합니다.
+이 API는 해당 안내를 거친 신규 가입 요청으로 처리합니다. JSON에 별도 동의 필드는 없습니다.
+백엔드 저장소에는 프런트엔드 로그인 페이지가 포함되어 있지 않습니다.
+
+```http
+POST /api/v1/auth/kakao
+Content-Type: application/json
+
+{"authorizationCode":"카카오에서 새로 받은 인가 코드"}
+```
+
+```json
+{
+  "accessToken": "서비스에서 발급한 토큰",
+  "user": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "displayName": "사용자",
+    "onboardingCompleted": false
+  }
+}
+```
+
+신규 회원은 `users`에 저장하고, `user_consents`에 현재 두 정책의 버전과 같은 동의 시각을
+회원 생성·토큰 발급과 하나의 트랜잭션으로 저장합니다. 정책 버전 미설정 시 신규 가입은 500으로 거부됩니다.
+기존 회원 로그인은 현재 DB의 사용자 정보를 반환하며 새로운 정책 동의를 기록하지 않습니다.
+카카오 닉네임이 제공되지 않으면 표시 이름은 `사용자`입니다.
+
+토큰은 256비트 난수이며 `access_tokens`에는 SHA-256 해시와 만료 시각만 저장합니다.
+카카오 액세스 토큰과는 별개입니다. 보호 API에는 `Authorization: Bearer <accessToken>`을 보내세요.
+만료·누락·잘못된 토큰은 401을 반환하므로 다시 로그인합니다. 기존 임의 UUID 데이터는 자동 이관되지 않습니다.
+
+### Postman 테스트
+
+1. 서버와 MySQL을 실행합니다.
+2. 브라우저에서 `https://kauth.kakao.com/oauth/authorize?client_id=본인_REST_API_키&redirect_uri=등록한_URI&response_type=code`로 카카오 인가를 시작합니다. 프런트엔드는 state를 생성하고 콜백에서 검증해야 합니다.
+3. 콜백 URL의 `code`를 복사해 Postman의 `POST http://localhost:8080/api/v1/auth/kakao` JSON Body에 넣습니다.
+4. 성공 응답의 `accessToken`을 Postman Authorization → Bearer Token에 넣습니다.
+5. `GET http://localhost:8080/api/v1/auth/me`를 호출해 같은 사용자 정보를 확인합니다.
+
+인가 코드는 일회용입니다. 재시도할 때는 새 코드를 받으세요.
+실제 프런트엔드가 아직 없다면 등록한 콜백 페이지가 열리지 않더라도 주소창의 코드를 복사해 수동 테스트할 수 있습니다.
+
+### 자동 테스트
+
+```powershell
+.\gradlew.bat test --tests 'com.finsight.auth.*'
+```
+
+H2 DB와 모의 카카오 API로 신규 가입, 재로그인, 정책 동의, 만료 토큰, 요청 검증 및 오류 응답을 검사합니다.
+실제 카카오 키를 사용하는 종단 테스트는 별도입니다.
+[카카오 공식 REST API 문서](https://developers.kakao.com/docs/ko/kakaologin/rest-api)
+
 ## 개발 환경
 
 - Java 21

@@ -13,10 +13,13 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.UUID;
+import com.finsight.global.security.CurrentUser;
 
 @RestController
 @RequiredArgsConstructor
 public class FeedbackController {
+
+    private final CurrentUser currentUser;
 
     private final FeedbackService feedbackService;
 
@@ -35,7 +38,7 @@ public class FeedbackController {
             );
         }
 
-        UUID userId = UUID.randomUUID();
+        UUID userId = currentUser.id();
 
         return ResponseEntity.ok(
                 feedbackService.findAll(
@@ -60,7 +63,7 @@ public class FeedbackController {
             );
         }
 
-        UUID userId = UUID.randomUUID();
+        UUID userId = currentUser.id();
 
         return ResponseEntity.ok(
                 feedbackService.findById(

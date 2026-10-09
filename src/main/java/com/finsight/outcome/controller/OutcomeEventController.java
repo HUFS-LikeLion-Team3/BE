@@ -10,11 +10,14 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.UUID;
+import com.finsight.global.security.CurrentUser;
 
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/session-targets")
 public class OutcomeEventController {
+
+    private final CurrentUser currentUser;
 
     private final OutcomeService outcomeService;
 
@@ -26,7 +29,7 @@ public class OutcomeEventController {
                 parseSessionTargetId(sessionTargetId);
 
         // TODO 인증 연동 후 로그인 사용자 ID로 교체
-        UUID userId = UUID.randomUUID();
+        UUID userId = currentUser.id();
 
         return ResponseEntity.ok(
                 outcomeService.findEvents(

@@ -12,19 +12,10 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/auth")
 public class AuthController {
     private final KakaoLoginService loginService;
-    private final CurrentUser currentUser;
-    private final com.finsight.auth.repository.UserRepository users;
 
     @PostMapping("/kakao")
     public KakaoLoginService.LoginResponse login(@Valid @RequestBody LoginRequest request) {
         return loginService.login(request.authorizationCode());
-    }
-
-    @GetMapping("/me")
-    public KakaoLoginService.UserResponse me() {
-        return KakaoLoginService.UserResponse.from(users.findById(currentUser.id()).orElseThrow(() ->
-                new com.finsight.global.exception.ApiException(org.springframework.http.HttpStatus.UNAUTHORIZED,
-                        "로그인이 필요합니다.")));
     }
 
     public record LoginRequest(

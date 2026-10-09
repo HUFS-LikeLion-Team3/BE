@@ -8,7 +8,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "users", uniqueConstraints = @UniqueConstraint(
-        name = "uk_users_provider_user", columnNames = {"auth_provider", "provider_user_id"}))
+        name = "uk_users_provider_user_id", columnNames = {"provider_user_id"}))
 @Getter
 @NoArgsConstructor(access = lombok.AccessLevel.PROTECTED)
 public class User {
@@ -18,7 +18,7 @@ public class User {
     private String authProvider;
     @Column(name = "provider_user_id", nullable = false, length = 128)
     private String providerUserId;
-    @Column(name = "display_name", nullable = false, length = 100)
+    @Column(name = "display_name", length = 100)
     private String displayName;
     @Column(name = "onboarding_completed_at")
     private Instant onboardingCompletedAt;

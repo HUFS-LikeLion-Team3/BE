@@ -58,7 +58,8 @@ Content-Type: application/json
 `users`는 최종 ERD에 맞춰 `id`, `auth_provider`, `provider_user_id`, `display_name`,
 `onboarding_completed_at`, `created_at`, `updated_at`을 사용합니다.
 카카오 로그인은 `auth_provider=kakao`, `provider_user_id=카카오 사용자 ID의 문자열`로 회원을 식별합니다.
-`auth_provider`와 `provider_user_id` 조합은 유일합니다. REST API 키는 회원 정보에 저장하지 않습니다.
+`provider_user_id` 단독으로 UNIQUE 제약을 적용합니다. REST API 키는 회원 정보에 저장하지 않습니다.
+`display_name`은 nullable 필드입니다. 카카오 로그인에서는 닉네임이 없으면 `사용자`를 저장합니다.
 신규 회원의 `onboarding_completed_at`은 NULL이며, 응답의 `onboardingCompleted`는 해당 시각의 존재 여부로 계산합니다.
 생성 시 `created_at`과 `updated_at`을 함께 기록하고, 회원 정보 변경 시 `updated_at`을 갱신합니다.
 
@@ -69,7 +70,7 @@ Content-Type: application/json
 
 서비스 Access Token은 HS256으로 서명한 stateless JWT입니다. `sub`에 회원 UUID,
 `iat`에 발급 시각, `exp`에 만료 시각, `iss`에 발급자를, `jti`에 토큰 식별자를 담습니다. 서명·발급자·만료시간을 검증하며
-인증 과정에서 토큰이나 회원을 DB 조회하지 않습니다. `GET /api/v1/auth/me` 등 실제 사용자 데이터 조회는 별도입니다.
+인증 과정에서 토큰이나 회원을 DB 조회하지 않습니다. `GET /api/v1/users/me` 등 실제 사용자 데이터 조회는 별도입니다.
 토큰 영속 테이블이나 refresh token, 강제 폐기 기능은 추가하지 않습니다.
 카카오 액세스 토큰과는 별개입니다. 보호 API에는 `Authorization: Bearer <accessToken>`을 보내세요.
 만료·누락·잘못된 토큰은 401을 반환하므로 다시 로그인합니다. 기존 임의 UUID 데이터는 자동 이관되지 않습니다.
@@ -87,7 +88,7 @@ Content-Type: application/json
 2. 브라우저에서 `https://kauth.kakao.com/oauth/authorize?client_id=본인_REST_API_키&redirect_uri=등록한_URI&response_type=code`로 카카오 인가를 시작합니다. 프런트엔드는 state를 생성하고 콜백에서 검증해야 합니다.
 3. 콜백 URL의 `code`를 복사해 Postman의 `POST http://localhost:8080/api/v1/auth/kakao` JSON Body에 넣습니다.
 4. 성공 응답의 `accessToken`을 Postman Authorization → Bearer Token에 넣습니다.
-5. `GET http://localhost:8080/api/v1/auth/me`를 호출해 같은 사용자 정보를 확인합니다.
+5. `GET http://localhost:8080/api/v1/users/me`를 호출해 같은 사용자 정보를 확인합니다.
 
 인가 코드는 일회용입니다. 재시도할 때는 새 코드를 받으세요.
 실제 프런트엔드가 아직 없다면 등록한 콜백 페이지가 열리지 않더라도 주소창의 코드를 복사해 수동 테스트할 수 있습니다.

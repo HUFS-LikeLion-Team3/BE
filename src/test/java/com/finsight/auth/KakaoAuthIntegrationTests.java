@@ -88,6 +88,14 @@ class KakaoAuthIntegrationTests {
     }
 
     @Test
+    void providerUserIdIsUniqueAcrossProvidersAndDisplayNameAllowsNull() {
+        var user = users.saveAndFlush(new com.finsight.auth.entity.User("kakao", "nullable-name-user", null));
+        assertNull(users.findById(user.getId()).orElseThrow().getDisplayName());
+        assertThrows(org.springframework.dao.DataIntegrityViolationException.class, () ->
+                users.saveAndFlush(new com.finsight.auth.entity.User("other", "nullable-name-user", "다른 사용자")));
+    }
+
+    @Test
     void consentTimestampColumnMatchesFinalErd() {
         var columns = jdbc.queryForList("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
                 + "WHERE TABLE_NAME = 'USER_CONSENTS' AND TABLE_SCHEMA = 'PUBLIC'", String.class);
@@ -132,11 +140,11 @@ class KakaoAuthIntegrationTests {
     @Test
     void bearerTokenAuthenticatesAndTamperedTokenReturns401() throws Exception {
         var login = loginService.login("code");
-        mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + login.accessToken()))
+        mvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer " + login.accessToken()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(login.user().id().toString()));
         String tamperedToken = "x" + login.accessToken().substring(1);
 
-        mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + tamperedToken))
+        mvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer " + tamperedToken))
                 .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.status").value(401));
     }
 
@@ -150,7 +158,7 @@ class KakaoAuthIntegrationTests {
                 .issuedAt(Instant.now().minusSeconds(3600)).expiresAt(Instant.now().minusSeconds(1)).build();
         String expired = encoder.encode(JwtEncoderParameters.from(
                 JwsHeader.with(MacAlgorithm.HS256).build(), claims)).getTokenValue();
-        mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + expired))
+        mvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer " + expired))
                 .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.status").value(401));
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES "
                 + "WHERE TABLE_NAME IN ('ACCESS_TOKENS', 'REFRESH_TOKENS')", Integer.class));
@@ -158,8 +166,8 @@ class KakaoAuthIntegrationTests {
 
     @Test
     void missingAndUnknownTokensReturn401() throws Exception {
-        mvc.perform(get("/api/v1/auth/me")).andExpect(status().isUnauthorized());
-        mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer invalid"))
+        mvc.perform(get("/api/v1/users/me")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer invalid"))
                 .andExpect(status().isUnauthorized());
         mvc.perform(get("/api/v1/learning-sessions")).andExpect(status().isUnauthorized());
     }

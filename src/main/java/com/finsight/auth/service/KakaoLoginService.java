@@ -17,6 +17,7 @@ import java.util.UUID;
 
 @Service
 public class KakaoLoginService {
+    private static final String AUTH_PROVIDER = "kakao";
     private final KakaoClient kakao;
     private final UserRepository users;
     private final UserConsentRepository consents;
@@ -49,15 +50,16 @@ public class KakaoLoginService {
     }
 
     private LoginResponse loginOrRegister(KakaoClient.Profile profile, boolean allowSignup) {
-        User user = users.findByKakaoAppIdAndKakaoId(kakao.appId(), profile.id()).orElseGet(() -> {
+        String providerUserId = profile.id().toString();
+        User user = users.findByAuthProviderAndProviderUserId(AUTH_PROVIDER, providerUserId).orElseGet(() -> {
             if (!allowSignup) throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "서버 내부 오류가 발생했습니다.");
             if (termsVersion.isBlank() || privacyVersion.isBlank()) {
                 throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "현재 정책 버전 설정이 필요합니다.");
             }
-            User created = users.saveAndFlush(new User(kakao.appId(), profile.id(), profile.displayName()));
-            Instant agreedAt = Instant.now();
-            consents.saveAll(List.of(new UserConsent(created, "TERMS_OF_SERVICE", termsVersion, agreedAt),
-                    new UserConsent(created, "PRIVACY_POLICY", privacyVersion, agreedAt)));
+            User created = users.saveAndFlush(new User(AUTH_PROVIDER, providerUserId, profile.displayName()));
+            Instant consentedAt = Instant.now();
+            consents.saveAll(List.of(new UserConsent(created, "terms_of_service", termsVersion, consentedAt),
+                    new UserConsent(created, "privacy_policy", privacyVersion, consentedAt)));
             return created;
         });
         return new LoginResponse(tokens.issue(user), UserResponse.from(user));
@@ -66,7 +68,7 @@ public class KakaoLoginService {
     public record LoginResponse(String accessToken, UserResponse user) {}
     public record UserResponse(UUID id, String displayName, boolean onboardingCompleted) {
         public static UserResponse from(User user) {
-            return new UserResponse(user.getId(), user.getDisplayName(), user.isOnboardingCompleted());
+            return new UserResponse(user.getId(), user.getDisplayName(), user.getOnboardingCompletedAt() != null);
         }
     }
 }

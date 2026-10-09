@@ -38,8 +38,6 @@ public class KakaoClient {
         this.redirectUri = redirectUri;
     }
 
-    public String appId() { return clientId; }
-
     public Profile authenticate(String code) {
         if (clientId.isBlank() || secret.isBlank()) {
             throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "카카오 로그인 설정이 필요합니다.");

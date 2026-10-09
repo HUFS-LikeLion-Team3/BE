@@ -7,27 +7,47 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "users", uniqueConstraints = @UniqueConstraint(name = "uk_users_kakao", columnNames = {"kakao_app_id", "kakao_id"}))
+@Table(name = "users", uniqueConstraints = @UniqueConstraint(
+        name = "uk_users_provider_user", columnNames = {"auth_provider", "provider_user_id"}))
 @Getter
 @NoArgsConstructor(access = lombok.AccessLevel.PROTECTED)
 public class User {
     @Id @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
-    @Column(name = "kakao_app_id", nullable = false, length = 128)
-    private String kakaoAppId;
-    @Column(name = "kakao_id", nullable = false)
-    private Long kakaoId;
-    @Column(nullable = false, length = 100)
+    @Column(name = "auth_provider", nullable = false, length = 30)
+    private String authProvider;
+    @Column(name = "provider_user_id", nullable = false, length = 128)
+    private String providerUserId;
+    @Column(name = "display_name", nullable = false, length = 100)
     private String displayName;
-    @Column(nullable = false)
-    private boolean onboardingCompleted;
-    @Column(nullable = false)
+    @Column(name = "onboarding_completed_at")
+    private Instant onboardingCompletedAt;
+    @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
 
-    public User(String kakaoAppId, Long kakaoId, String displayName) {
-        this.kakaoAppId = kakaoAppId;
-        this.kakaoId = kakaoId;
+    public User(String authProvider, String providerUserId, String displayName) {
+        this.authProvider = authProvider;
+        this.providerUserId = providerUserId;
         this.displayName = displayName;
-        this.createdAt = Instant.now();
+    }
+
+    @PrePersist
+    protected void onCreate() {
+        Instant now = Instant.now();
+        createdAt = now;
+        updatedAt = now;
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = Instant.now();
+    }
+
+    public void completeOnboarding() {
+        if (onboardingCompletedAt == null) {
+            onboardingCompletedAt = Instant.now();
+        }
     }
 }

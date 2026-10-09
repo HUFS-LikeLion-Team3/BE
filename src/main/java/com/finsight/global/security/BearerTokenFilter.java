@@ -33,13 +33,13 @@ public class BearerTokenFilter extends OncePerRequestFilter {
                 unauthorized(request, response);
                 return;
             }
-            var user = tokens.authenticate(header.substring(7));
-            if (user.isEmpty()) {
+            var userId = tokens.authenticate(header.substring(7));
+            if (userId.isEmpty()) {
                 unauthorized(request, response);
                 return;
             }
             var context = SecurityContextHolder.createEmptyContext();
-            context.setAuthentication(new UsernamePasswordAuthenticationToken(user.get().getId(), null,
+            context.setAuthentication(new UsernamePasswordAuthenticationToken(userId.get(), null,
                     AuthorityUtils.createAuthorityList("ROLE_USER")));
             SecurityContextHolder.setContext(context);
         }

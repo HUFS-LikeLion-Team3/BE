@@ -21,9 +21,12 @@ server:
 
 auth:
   access-token-ttl-seconds: ${ACCESS_TOKEN_TTL_SECONDS:3600}
+  jwt:
+    secret: ${JWT_SECRET:}
+    issuer: ${JWT_ISSUER:finsight}
   kakao:
-    client-id: ${KAKAO_CLIENT_ID:4948f9877d7469d5bd37534993504d31}
-    client-secret: ${KAKAO_CLIENT_SECRET:jeaT0uQL9YiIb7CX5A4Kf6NqL3I0EFEQ}
+    client-id: ${KAKAO_CLIENT_ID:}
+    client-secret: ${KAKAO_CLIENT_SECRET:}
     redirect-uri: ${KAKAO_REDIRECT_URI:http://localhost:3000/auth/kakao/callback}
   policy:
     terms-version: ${TERMS_VERSION:test-v1}

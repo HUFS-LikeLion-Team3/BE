@@ -1,6 +1,6 @@
 package com.finsight.auth;
 
-import com.finsight.auth.entity.AccessToken;
+
 import com.finsight.auth.repository.*;
 import com.finsight.auth.service.*;
 import com.finsight.global.exception.ApiException;
@@ -14,7 +14,17 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
+import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import com.nimbusds.jose.jwk.source.ImmutableSecret;
+import javax.crypto.spec.SecretKeySpec;
 import java.time.Instant;
+import java.util.Base64;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
@@ -25,25 +35,25 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.datasource.url=jdbc:h2:mem:auth;MODE=MySQL;DB_CLOSE_DELAY=-1",
         "spring.datasource.driver-class-name=org.h2.Driver", "spring.datasource.username=sa",
         "spring.datasource.password=", "spring.jpa.hibernate.ddl-auto=create-drop",
-        "spring.jpa.show-sql=false", "auth.policy.terms-version=terms-v1", "auth.policy.privacy-version=privacy-v1"
+        "auth.jwt.secret=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=", "spring.jpa.show-sql=false", "auth.policy.terms-version=terms-v1", "auth.policy.privacy-version=privacy-v1"
 })
 class KakaoAuthIntegrationTests {
     @Autowired WebApplicationContext context;
     @Autowired UserRepository users;
     @Autowired UserConsentRepository consents;
-    @Autowired AccessTokenRepository accessTokens;
+
     @Autowired KakaoLoginService loginService;
     @Autowired TokenService tokens;
     @Autowired PlatformTransactionManager manager;
+    @Autowired JdbcTemplate jdbc;
     @MockitoBean KakaoClient kakao;
     MockMvc mvc;
 
     @BeforeEach
     void setup() {
-        accessTokens.deleteAll();
+
         consents.deleteAll();
         users.deleteAll();
-        when(kakao.appId()).thenReturn("test-app");
         when(kakao.authenticate(anyString())).thenReturn(new KakaoClient.Profile(123L, "사용자"));
         mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
     }
@@ -58,7 +68,52 @@ class KakaoAuthIntegrationTests {
                 .andExpect(jsonPath("$.user.onboardingCompleted").value(false));
         assertEquals(1, users.count());
         assertEquals(2, consents.count());
-        assertTrue(consents.findAll().stream().allMatch(consent -> consent.getAgreedAt() != null));
+        var savedConsents = consents.findAll();
+        assertTrue(savedConsents.stream().allMatch(consent -> consent.getConsentedAt() != null));
+        assertEquals(java.util.Set.of("terms_of_service", "privacy_policy"), savedConsents.stream()
+                .map(consent -> consent.getPolicyType()).collect(java.util.stream.Collectors.toSet()));
+        assertEquals(savedConsents.get(0).getConsentedAt(), savedConsents.get(1).getConsentedAt());
+        var user = users.findByAuthProviderAndProviderUserId("kakao", "123").orElseThrow();
+        assertNull(user.getOnboardingCompletedAt());
+        assertNotNull(user.getCreatedAt());
+        assertEquals(user.getCreatedAt(), user.getUpdatedAt());
+    }
+
+    @Test
+    void usersTableMatchesFinalErd() {
+        var columns = jdbc.queryForList("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+                + "WHERE TABLE_NAME = 'USERS' AND TABLE_SCHEMA = 'PUBLIC'", String.class);
+        assertEquals(java.util.Set.of("ID", "AUTH_PROVIDER", "PROVIDER_USER_ID", "DISPLAY_NAME",
+                "ONBOARDING_COMPLETED_AT", "CREATED_AT", "UPDATED_AT"), new java.util.HashSet<>(columns));
+    }
+
+    @Test
+    void consentTimestampColumnMatchesFinalErd() {
+        var columns = jdbc.queryForList("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+                + "WHERE TABLE_NAME = 'USER_CONSENTS' AND TABLE_SCHEMA = 'PUBLIC'", String.class);
+        assertTrue(columns.contains("CONSENTED_AT"));
+        assertFalse(columns.contains("AGREED_AT"));
+    }
+
+    @Test
+    void completedOnboardingIsReportedOnExistingLogin() {
+        var first = loginService.login("first-code");
+        var user = users.findById(first.user().id()).orElseThrow();
+        var createdAt = user.getCreatedAt();
+        user.completeOnboarding();
+        var completedAt = user.getOnboardingCompletedAt();
+        user.completeOnboarding();
+        assertEquals(completedAt, user.getOnboardingCompletedAt());
+        users.saveAndFlush(user);
+
+        var stored = users.findById(first.user().id()).orElseThrow();
+        assertEquals(createdAt, stored.getCreatedAt());
+        assertFalse(stored.getUpdatedAt().isBefore(createdAt));
+        assertNotNull(stored.getOnboardingCompletedAt());
+        var second = loginService.login("second-code");
+        assertEquals(first.user().id(), second.user().id());
+        assertTrue(second.user().onboardingCompleted());
+        assertEquals(2, consents.count());
     }
 
     @Test
@@ -71,18 +126,34 @@ class KakaoAuthIntegrationTests {
         assertEquals(1, users.count());
         assertEquals(2, consents.count());
         assertTrue(consents.findAll().stream().noneMatch(c -> c.getPolicyVersion().endsWith("v2")));
-        assertTrue(accessTokens.findAll().stream().noneMatch(t -> t.getTokenHash().equals(first.accessToken())));
+        assertEquals(first.user().id(), tokens.authenticate(first.accessToken()).orElseThrow());
     }
 
     @Test
-    void bearerTokenAuthenticatesAndExpiredTokenReturns401() throws Exception {
+    void bearerTokenAuthenticatesAndTamperedTokenReturns401() throws Exception {
         var login = loginService.login("code");
         mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + login.accessToken()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(login.user().id().toString()));
-        var user = users.findById(login.user().id()).orElseThrow();
-        accessTokens.saveAndFlush(new AccessToken(TokenService.hash(login.accessToken()), user, Instant.now().minusSeconds(1)));
-        mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + login.accessToken()))
+        String tamperedToken = "x" + login.accessToken().substring(1);
+
+        mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + tamperedToken))
                 .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.status").value(401));
+    }
+
+    @Test
+    void expiredJwtReturns401AndSchemaHasNoTokenTable() throws Exception {
+        var login = loginService.login("code");
+        var key = new SecretKeySpec(Base64.getDecoder().decode(
+                "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="), "HmacSHA256");
+        var encoder = new NimbusJwtEncoder(new ImmutableSecret<>(key));
+        var claims = JwtClaimsSet.builder().issuer("finsight").subject(login.user().id().toString())
+                .issuedAt(Instant.now().minusSeconds(3600)).expiresAt(Instant.now().minusSeconds(1)).build();
+        String expired = encoder.encode(JwtEncoderParameters.from(
+                JwsHeader.with(MacAlgorithm.HS256).build(), claims)).getTokenValue();
+        mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + expired))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.status").value(401));
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES "
+                + "WHERE TABLE_NAME IN ('ACCESS_TOKENS', 'REFRESH_TOKENS')", Integer.class));
     }
 
     @Test
@@ -124,6 +195,6 @@ class KakaoAuthIntegrationTests {
         assertThrows(ApiException.class, () -> unconfigured.login("code"));
         assertEquals(0, users.count());
         assertEquals(0, consents.count());
-        assertEquals(0, accessTokens.count());
+
     }
 }

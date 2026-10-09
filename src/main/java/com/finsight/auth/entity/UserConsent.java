@@ -20,13 +20,13 @@ public class UserConsent {
     private String policyType;
     @Column(name = "policy_version", nullable = false, length = 100)
     private String policyVersion;
-    @Column(nullable = false)
-    private Instant agreedAt;
+    @Column(name = "consented_at", nullable = false)
+    private Instant consentedAt;
 
-    public UserConsent(User user, String policyType, String policyVersion, Instant agreedAt) {
+    public UserConsent(User user, String policyType, String policyVersion, Instant consentedAt) {
         this.user = user;
         this.policyType = policyType;
         this.policyVersion = policyVersion;
-        this.agreedAt = agreedAt;
+        this.consentedAt = consentedAt;
     }
 }

@@ -61,19 +61,19 @@ class NewsApiTests {
         News match = news("match", "published", "live", at, Set.of("US"), Set.of("rates"));
         news("hidden", "draft", "live", at.plusSeconds(200), Set.of("US"), Set.of("rates"));
         news("replay", "published", "replay", at.plusSeconds(300), Set.of("US"), Set.of());
-        mvc.perform(get("/api/v1/news").header("Authorization", token).param("sort", "recommended"))
+        mvc.perform(get("/api/v1/news").header("Authorization", token).param("sort", "recommended").param("contentType", "live"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].id").value(newest.getId().toString()))
                 .andExpect(jsonPath("$.content.length()").value(2));
         interests.saveAndFlush(new UserNewsInterest(userId, Set.of("US"), Set.of("rates")));
-        mvc.perform(get("/api/v1/news").header("Authorization", token).param("sort", "recommended").param("size", "1"))
+        mvc.perform(get("/api/v1/news").header("Authorization", token).param("sort", "recommended").param("size", "1").param("contentType", "live"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].id").value(match.getId().toString()))
                 .andExpect(jsonPath("$.hasNext").value(true));
         mvc.perform(get("/api/v1/news").header("Authorization", token).param("sort", "recommended")
-                        .param("size", "1").param("page", "1"))
+                        .param("size", "1").param("page", "1").param("contentType", "live"))
                 .andExpect(jsonPath("$.content[0].id").value(newest.getId().toString()))
                 .andExpect(jsonPath("$.hasNext").value(false));
         interests.saveAndFlush(new UserNewsInterest(userId, Set.of("KR"), Set.of()));
-        mvc.perform(get("/api/v1/news").header("Authorization", token).param("sort", "recommended"))
+        mvc.perform(get("/api/v1/news").header("Authorization", token).param("sort", "recommended").param("contentType", "live"))
                 .andExpect(jsonPath("$.content[0].id").value(newest.getId().toString()));
     }
     @Test void tiedResultsAndExplicitFiltersAreStable() throws Exception {
@@ -85,18 +85,54 @@ class NewsApiTests {
                 .map(n -> n.getId().toString()).sorted().toList();
         for (String sort : List.of("latest", "recommended")) {
             mvc.perform(get("/api/v1/news").header("Authorization", token).param("sort", sort)
-                            .param("category", "rate").param("replayStatus", "not_eligible"))
+                            .param("category", "rate").param("replayStatus", "not_eligible").param("contentType", "live"))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].id").value(expected.get(0)))
                     .andExpect(jsonPath("$.content[1].id").value(expected.get(1)))
                     .andExpect(jsonPath("$.page").value(0)).andExpect(jsonPath("$.size").value(20));
         }
+        mvc.perform(get("/api/v1/news").header("Authorization", token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(3));
         mvc.perform(get("/api/v1/news").header("Authorization", token).param("contentType", "replay"))
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.content[0].id").value(replay.getId().toString()));
         mvc.perform(get("/api/v1/news").header("Authorization", token).param("page", "10"))
                 .andExpect(jsonPath("$.content.length()").value(0)).andExpect(jsonPath("$.hasNext").value(false));
     }
+    @Test void factsMatchContractAndOnlyExposePublishedNews() throws Exception {
+        Instant at = Instant.parse("2026-10-01T09:00:00Z");
+        News n = news("facts", "published", "live", at, Set.of(), Set.of());
+        News hidden = news("hidden", "draft", "live", at, Set.of(), Set.of());
+        News empty = news("empty", "published", "live", at, Set.of(), Set.of());
+        NewsFact second = new NewsFact(n.getId(), "변동 폭", "0.00", "%", at, 2);
+        NewsFact first = new NewsFact(n.getId(), "기준금리", "4.25", "%", at, 1);
+        em.persist(second);
+        em.persist(first);
+        em.persist(new NewsFact(hidden.getId(), "비공개 수치", "1", "%", at, 1));
+        em.flush();
+        mvc.perform(get("/api/v1/news/" + n.getId() + "/facts").header("Authorization", token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.facts.length()").value(2))
+                .andExpect(jsonPath("$.facts[0].id").value(first.getId().toString()))
+                .andExpect(jsonPath("$.facts[0].label").value("기준금리"))
+                .andExpect(jsonPath("$.facts[0].valueText").value("4.25"))
+                .andExpect(jsonPath("$.facts[0].unit").value("%"))
+                .andExpect(jsonPath("$.facts[0].asOfAt").value("2026-10-01T09:00:00Z"))
+                .andExpect(jsonPath("$.facts[0].sortOrder").value(1))
+                .andExpect(jsonPath("$.facts[1].id").value(second.getId().toString()));
+        mvc.perform(get("/api/v1/news/" + empty.getId() + "/facts").header("Authorization", token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.facts").isEmpty());
+        for (UUID id : List.of(hidden.getId(), UUID.randomUUID())) {
+            mvc.perform(get("/api/v1/news/" + id + "/facts").header("Authorization", token))
+                    .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").value("뉴스를 찾을 수 없습니다."));
+        }
+        mvc.perform(get("/api/v1/news/" + n.getId() + "/facts")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/news/1/facts").header("Authorization", token)).andExpect(status().isBadRequest());
+    }
     @Test void filtersPaginationAuthenticationAndHiddenDetails() throws Exception {
+        mvc.perform(get("/api/v1/news/22222222-2222-4222-8222-222222222222/unknown")
+                        .header("Authorization", token))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("요청한 경로를 찾을 수 없습니다."));
         for (String path : List.of("/api/v1/news/1", "/api/v1/news/1/sources", "/api/v1/source-documents/1")) {
             mvc.perform(get(path).header("Authorization", token))
                     .andExpect(status().isBadRequest())
@@ -112,8 +148,13 @@ class NewsApiTests {
             mvc.perform(get("/api/v1/news").header("Authorization", token).param(entry.getKey(), entry.getValue()))
                     .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("유효하지 않은 뉴스 조회 조건입니다."));
         }
-        mvc.perform(get("/api/v1/news").header("Authorization", token).param("page", "abc"))
-                .andExpect(status().isBadRequest());
+        for (String value : List.of("abc", "1.5", "2147483648")) {
+            for (String parameter : List.of("page", "size")) {
+                mvc.perform(get("/api/v1/news").header("Authorization", token).param(parameter, value))
+                        .andExpect(status().isBadRequest())
+                        .andExpect(jsonPath("$.message").value("유효하지 않은 뉴스 조회 조건입니다."));
+            }
+        }
         mvc.perform(get("/api/v1/news/" + hidden.getId()).header("Authorization", token)).andExpect(status().isNotFound());
         mvc.perform(get("/api/v1/news/" + hidden.getId() + "/sources").header("Authorization", token)).andExpect(status().isNotFound());
     }

@@ -15,15 +15,17 @@ public class NewsController {
     private final NewsService service;
     @GetMapping("/news")
     public ListResponse list(@RequestParam(required = false) String category,
-            @RequestParam(defaultValue = "live") String contentType,
+            @RequestParam(required = false) String contentType,
             @RequestParam(required = false) String replayStatus,
             @RequestParam(defaultValue = "latest") String sort,
-            @RequestParam(defaultValue = "0") String page,
-            @RequestParam(defaultValue = "20") String size) {
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
         return service.list(currentUser.id(), category, contentType, replayStatus, sort, page, size);
     }
     @GetMapping("/news/{newsId}")
     public Detail detail(@PathVariable UUID newsId) { return service.detail(newsId); }
+    @GetMapping("/news/{newsId}/facts")
+    public Facts facts(@PathVariable UUID newsId) { return service.facts(newsId); }
     @GetMapping("/news/{newsId}/sources")
     public Sources sources(@PathVariable UUID newsId) { return service.sources(newsId); }
     @GetMapping("/source-documents/{sourceDocumentId}")

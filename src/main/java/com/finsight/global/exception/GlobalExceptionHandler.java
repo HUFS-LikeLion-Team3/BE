@@ -16,6 +16,15 @@ public class GlobalExceptionHandler {
 
     private static final ZoneId KOREA_ZONE = ZoneId.of("Asia/Seoul");
 
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleMissingResource(
+            org.springframework.web.servlet.resource.NoResourceFoundException e,
+            HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ErrorResponse(
+                OffsetDateTime.now(KOREA_ZONE), 404, "Not Found",
+                "요청한 경로를 찾을 수 없습니다.", request.getRequestURI()));
+    }
+
     @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ErrorResponse> handleTypeMismatch(
             org.springframework.web.method.annotation.MethodArgumentTypeMismatchException e,

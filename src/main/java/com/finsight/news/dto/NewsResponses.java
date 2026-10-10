@@ -30,6 +30,12 @@ public final class NewsResponses {
         }
     }
     public record Sources(List<Source> sources) {}
+    public record Fact(UUID id, String label, String valueText, String unit, Instant asOfAt, int sortOrder) {
+        public static Fact from(com.finsight.news.entity.NewsFact f) {
+            return new Fact(f.getId(), f.getLabel(), f.getValueText(), f.getUnit(), f.getAsOfAt(), f.getSortOrder());
+        }
+    }
+    public record Facts(List<Fact> facts) {}
     public record Document(UUID id, String sourceType, String selectionTier, String publisher, String title,
                            String url, OffsetDateTime publishedAt, boolean isPrimary,
                            String contentHash, Instant retrievedAt) {

@@ -19,7 +19,7 @@ sample 프로필은 필요할 때만 활성화하며 재실행해도 중복 삽�
 | 한국 뉴스 출처 문서 | bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb |
 
 모두 가상 자료이며 제목에 [샘플]을 표시합니다.
-기본 목록은 한국 뉴스 → 미국 뉴스 순서입니다.
+기본 목록은 한국 뉴스 → 미국 뉴스 → Replay 뉴스 순서입니다.
 미국 관심 시장 US, 관심 주제 rates가 저장된 사용자의 추천은 미국 뉴스 → 한국 뉴스 순서입니다.
 로그인 사용자·관심사는 자동 생성하거나 변경하지 않습니다.
 
@@ -29,10 +29,12 @@ sample 프로필은 필요할 때만 활성화하며 재실행해도 중복 삽�
 | --- | --- | --- |
 | GET | /api/v1/news | 공개 뉴스 목록 |
 | GET | /api/v1/news/{newsId} | 공개 뉴스 상세 |
+| GET | /api/v1/news/{newsId}/facts | 주요 사실 및 수치 |
 | GET | /api/v1/news/{newsId}/sources | 공개 뉴스 출처 |
 | GET | /api/v1/source-documents/{sourceDocumentId} | 저장된 출처 메타데이터 |
 
-목록 기본값: contentType=live, sort=latest, page=0, size=20.
+목록 기본값: sort=latest, page=0, size=20.
+contentType을 생략하면 공개된 Live·Replay 뉴스를 모두 조회합니다.
 페이지는 0 이상, 크기는 1~100입니다. 잘못된 조건은 400입니다.
 현재 명세에 명시된 category=rate, replayStatus=not_eligible만 허용합니다.
 contentType은 live/replay, sort는 latest/recommended를 허용합니다.
@@ -49,7 +51,7 @@ contentType은 live/replay, sort는 latest/recommended를 허용합니다.
 
 ## 저장 모델
 
-새 테이블: news, news_markets, news_topics, news_sources,
+새 테이블: news, news_markets, news_topics, news_sources, news_facts,
 user_news_interests, user_interest_markets, user_interest_topics.
 source_documents는 기존 피드백 출처 엔티티를 공유하며
 source_type, selection_tier, is_primary, retrieved_at 컬럼을 추가합니다.

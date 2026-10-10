@@ -19,27 +19,25 @@ public class NewsService {
     private final NewsRepository news;
     private final UserNewsInterestRepository interests;
     private final NewsSourceRepository sources;
+    private final NewsFactRepository facts;
     private final FeedbackSourceDocumentRepository documents;
     private final EntityManager em;
 
     public ListResponse list(UUID userId, String category, String contentType, String replayStatus,
-                             String sort, String pageValue, String sizeValue) {
-        int page;
-        int size;
-        try {
-            page = Integer.parseInt(pageValue);
-            size = Integer.parseInt(sizeValue);
-        } catch (NumberFormatException e) { throw invalid(); }
+                             String sort, int page, int size) {
         if (page < 0 || size < 1 || size > 100 || (long) page * size > Integer.MAX_VALUE
-                || !Set.of("live", "replay").contains(contentType)
+                || (contentType != null && !Set.of("live", "replay").contains(contentType))
                 || !Set.of("latest", "recommended").contains(sort)
                 || (category != null && !Set.of("rate").contains(category))
                 || (replayStatus != null && !Set.of("not_eligible").contains(replayStatus))) {
             throw invalid();
         }
         var parameters = new HashMap<String, Object>();
-        StringBuilder query = new StringBuilder("select n from News n where n.status = 'published' and n.contentType = :contentType");
-        parameters.put("contentType", contentType);
+        StringBuilder query = new StringBuilder("select n from News n where n.status = 'published'");
+        if (contentType != null) {
+            query.append(" and n.contentType = :contentType");
+            parameters.put("contentType", contentType);
+        }
         if (category != null) { query.append(" and n.category = :category"); parameters.put("category", category); }
         if (replayStatus != null) { query.append(" and n.replayStatus = :replayStatus"); parameters.put("replayStatus", replayStatus); }
         var scores = new ArrayList<String>();
@@ -77,6 +75,10 @@ public class NewsService {
                 new ApiException(HttpStatus.NOT_FOUND, "뉴스를 찾을 수 없습니다."));
     }
     public Detail detail(UUID id) { return Detail.from(published(id)); }
+    public Facts facts(UUID id) {
+        published(id);
+        return new Facts(facts.findByNewsIdOrderBySortOrderAscIdAsc(id).stream().map(Fact::from).toList());
+    }
     public Sources sources(UUID id) {
         published(id);
         return new Sources(sources.findSources(id).stream().map(s -> Source.from(s.getDocument())).toList());

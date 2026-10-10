@@ -1,4 +1,14 @@
 -- API 확인용 가상 데이터입니다. 실제 금융 뉴스가 아닙니다.
+INSERT INTO news_facts (id,news_id,label,value_text,unit,as_of_at,sort_order)
+SELECT X'eeeeeeeeeeee4eee8eeeeeeeeeeeeee1',X'11111111111141118111111111111111','기준금리','4.25','%','2026-10-01 09:00:00',1
+WHERE NOT EXISTS (SELECT 1 FROM news_facts WHERE id=X'eeeeeeeeeeee4eee8eeeeeeeeeeeeee1');
+INSERT INTO news_facts (id,news_id,label,value_text,unit,as_of_at,sort_order)
+SELECT X'eeeeeeeeeeee4eee8eeeeeeeeeeeeee2',X'22222222222242228222222222222222','기준금리','2.50','%','2026-10-01 09:00:00',1
+WHERE NOT EXISTS (SELECT 1 FROM news_facts WHERE id=X'eeeeeeeeeeee4eee8eeeeeeeeeeeeee2');
+-- 이전 샘플에만 있던 금리 변동 폭 항목을 정리합니다.
+DELETE FROM news_facts
+WHERE id=X'eeeeeeeeeeee4eee8eeeeeeeeeeeeee3'
+  AND news_id=X'22222222222242228222222222222222';
 INSERT INTO news (id,title,category,briefing,content_type,replay_status,status,published_at,reference_at,curated_at)
 SELECT X'11111111111141118111111111111111','[샘플] 미국 기준금리 동결','rate','API 테스트를 위한 가상 금리 뉴스입니다.','live','not_eligible','published','2026-10-01 09:00:00','2026-10-01 09:00:00','2026-10-01 09:00:00'
 WHERE NOT EXISTS (SELECT 1 FROM news WHERE id=X'11111111111141118111111111111111');

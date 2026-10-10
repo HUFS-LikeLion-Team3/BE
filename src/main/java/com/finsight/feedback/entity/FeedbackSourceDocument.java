@@ -21,6 +21,18 @@ public class FeedbackSourceDocument {
     @Id
     private UUID id;
 
+    @Column(name = "source_type")
+    private String sourceType;
+
+    @Column(name = "selection_tier")
+    private String selectionTier;
+
+    @Column(name = "is_primary", nullable = false)
+    private boolean primary;
+
+    @Column(name = "retrieved_at")
+    private java.time.Instant retrievedAt;
+
     @Column(nullable = false)
     private String publisher;
 

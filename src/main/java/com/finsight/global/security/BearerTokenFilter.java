@@ -52,6 +52,6 @@ public class BearerTokenFilter extends OncePerRequestFilter {
         response.setContentType("application/json;charset=UTF-8");
         response.getWriter().write(JsonMapper.builder().build().writeValueAsString(new ErrorResponse(
                 OffsetDateTime.now(ZoneId.of("Asia/Seoul")), 401, "Unauthorized",
-                "로그인이 필요하거나 토큰이 만료되었습니다.", request.getRequestURI())));
+                "로그인이 필요합니다.", request.getRequestURI())));
     }
 }

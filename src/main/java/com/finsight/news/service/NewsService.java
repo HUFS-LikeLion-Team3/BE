@@ -24,6 +24,7 @@ public class NewsService {
 
     public ListResponse list(UUID userId, String category, String contentType, String replayStatus,
                              String sort, int page, int size) {
+        if (contentType == null) contentType = "live";
         if (page < 0 || size < 1 || size > 100 || (long) page * size > Integer.MAX_VALUE
                 || (contentType != null && !Set.of("live", "replay").contains(contentType))
                 || !Set.of("latest", "recommended").contains(sort)
@@ -33,10 +34,8 @@ public class NewsService {
         }
         var parameters = new HashMap<String, Object>();
         StringBuilder query = new StringBuilder("select n from News n where n.status = 'published'");
-        if (contentType != null) {
-            query.append(" and n.contentType = :contentType");
-            parameters.put("contentType", contentType);
-        }
+        query.append(" and n.contentType = :contentType");
+        parameters.put("contentType", contentType);
         if (category != null) { query.append(" and n.category = :category"); parameters.put("category", category); }
         if (replayStatus != null) { query.append(" and n.replayStatus = :replayStatus"); parameters.put("replayStatus", replayStatus); }
         var scores = new ArrayList<String>();

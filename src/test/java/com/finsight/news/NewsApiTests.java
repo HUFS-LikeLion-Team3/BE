@@ -73,16 +73,16 @@ class NewsApiTests {
         News match = news("match", "published", "live", at, Set.of("US"), Set.of("rates"));
         news("hidden", "draft", "live", at.plusSeconds(200), Set.of("US"), Set.of("rates"));
         news("replay", "published", "replay", at.plusSeconds(300), Set.of("US"), Set.of());
-        mvc.perform(get("/api/v1/news").header("Authorization", token).param("sort", "recommended").param("contentType", "live"))
+        mvc.perform(get("/api/v1/news").header("Authorization", token).param("sort", "recommended"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].id").value(newest.getId().toString()))
                 .andExpect(jsonPath("$.content.length()").value(2));
         interests.saveAndFlush(new UserInterest(users.getReferenceById(userId), UserInterest.InterestType.market, "us_equity"));
         interests.saveAndFlush(new UserInterest(users.getReferenceById(userId), UserInterest.InterestType.topic, "rate"));
-        mvc.perform(get("/api/v1/news").header("Authorization", token).param("sort", "recommended").param("size", "1").param("contentType", "live"))
+        mvc.perform(get("/api/v1/news").header("Authorization", token).param("sort", "recommended").param("size", "1"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].id").value(match.getId().toString()))
                 .andExpect(jsonPath("$.hasNext").value(true));
         mvc.perform(get("/api/v1/news").header("Authorization", token).param("sort", "recommended")
-                        .param("size", "1").param("page", "1").param("contentType", "live"))
+                        .param("size", "1").param("page", "1"))
                 .andExpect(jsonPath("$.content[0].id").value(newest.getId().toString()))
                 .andExpect(jsonPath("$.hasNext").value(false));
         interests.deleteByUserId(userId);
@@ -125,7 +125,9 @@ class NewsApiTests {
                     .andExpect(jsonPath("$.page").value(0)).andExpect(jsonPath("$.size").value(20));
         }
         mvc.perform(get("/api/v1/news").header("Authorization", token))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(3));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].id").value(expected.get(0)))
+                .andExpect(jsonPath("$.content[1].id").value(expected.get(1)));
         mvc.perform(get("/api/v1/news").header("Authorization", token).param("contentType", "replay"))
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.content[0].id").value(replay.getId().toString()));

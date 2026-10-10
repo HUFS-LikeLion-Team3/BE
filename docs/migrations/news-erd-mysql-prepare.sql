@@ -9,6 +9,9 @@ BEGIN
   IF EXISTS (SELECT 1 FROM news WHERE published_at IS NULL OR reference_at IS NULL) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Fill real published_at/reference_at before migration';
   END IF;
+  IF EXISTS (SELECT 1 FROM source_documents WHERE published_at IS NULL) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Fill real source_documents.published_at before migration';
+  END IF;
   IF EXISTS (SELECT 1 FROM source_documents WHERE source_type IS NULL OR selection_tier IS NULL OR retrieved_at IS NULL) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Fill approved source metadata before migration';
   END IF;

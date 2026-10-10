@@ -17,7 +17,7 @@
 market=대상 market_category로 대응합니다.
 category는 varchar이므로 rate 외 문자열도 허용합니다.
 Replay 필터는 not_eligible, eligible, featured 전체를 허용합니다.
-contentType 생략 시 전체 조회는 사용자의 후속 요청을 유지합니다.
+contentType 생략 시 P0 기본값 live를 적용하며 Replay는 명시적으로 조회합니다.
 
 ## 기존 로컬 DB 이관
 
@@ -28,12 +28,14 @@ SQL은 이전 코드가 만든 테이블들이 있는 DB용이며 빈 DB에서�
 1. 실행 중인 서버를 중지하고 DB를 백업합니다.
 2. migrations/news-erd-mysql-prepare.sql을 MySQL 콘솔에서 실행합니다.
    기존 출처 다중 뉴스 연결, 필수 메타데이터 누락, 중복 유일 키가 있으면 중단합니다.
+   source_documents.published_at IS NULL인 행도 DDL·데이터 변경 전에 검사하고 중단합니다.
    누락된 실제 메타데이터는 먼저 보완합니다. 공개 시각·본문 해시를 추정해서 채우지 않습니다.
    생성 시각이 없던 기존 행은 이관 시각으로 기록합니다.
    MySQL DDL은 자동 커밋이므로 실패 시 백업과 실행 로그를 기준으로 확인합니다.
 3. sample 프로필로 새 서버를 1회 실행합니다. Hibernate가 새 테이블과 제약을 생성합니다.
 4. 서버를 중지하고 migrations/news-erd-mysql-interests.sql과
    migrations/news-erd-mysql-finalize.sql을 순서대로 실행합니다.
+   finalize는 source_documents.published_at을 datetime(6) NOT NULL로 확정합니다.
    이전 US/KR/rates 샘플 키를 us_equity/korea_equity/rate로 옮깁니다.
    나머지 키는 원문 그대로 보존하며 키 사전에 맞는지 확인해야 합니다.
 5. 이전 뉴스 태그를 새 대상 후보로 일괄 추정하지 않습니다.

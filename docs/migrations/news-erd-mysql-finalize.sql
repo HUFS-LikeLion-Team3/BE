@@ -7,6 +7,7 @@ ALTER TABLE news
  MODIFY replay_status varchar(255) NOT NULL DEFAULT 'not_eligible',
  MODIFY status varchar(255) NOT NULL DEFAULT 'draft';
 ALTER TABLE source_documents
+ MODIFY published_at datetime(6) NOT NULL,
  MODIFY source_type varchar(255) NOT NULL,
  MODIFY selection_tier varchar(255) NOT NULL,
  MODIFY retrieved_at datetime(6) NOT NULL,

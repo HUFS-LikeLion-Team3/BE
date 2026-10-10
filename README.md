@@ -2,6 +2,8 @@
 
 FinSight 백엔드 프로젝트입니다.
 
+[카카오 인증 설정 및 테스트 안내](docs/auth-kakao.md)
+
 ## 개발 환경
 
 - Java 21

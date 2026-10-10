@@ -59,6 +59,80 @@ class KakaoAuthIntegrationTests {
     }
 
     @Test
+    void consentListContainsOnlyAuthenticatedUsersRecords() throws Exception {
+        var first = loginService.login("first");
+        when(kakao.authenticate("second")).thenReturn(new KakaoClient.Profile(456L, "다른 사용자"));
+        var second = loginService.login("second");
+        var expectedIds = consents.findAllByUserIdOrderByConsentedAtAscIdAsc(first.user().id()).stream()
+                .map(consent -> consent.getId().toString()).toList();
+        assertEquals(4, consents.count());
+        mvc.perform(get("/api/v1/users/me/consents").header("Authorization", "Bearer " + first.accessToken()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$", org.hamcrest.Matchers.hasSize(2)))
+                .andExpect(jsonPath("$[0].id").value(expectedIds.get(0)))
+                .andExpect(jsonPath("$[1].id").value(expectedIds.get(1)))
+                .andExpect(jsonPath("$[*].policyType", org.hamcrest.Matchers.containsInAnyOrder("terms_of_service", "privacy_policy")))
+                .andExpect(jsonPath("$[0].consentedAt").value(org.hamcrest.Matchers.endsWith("+09:00")));
+        var secondIds = consents.findAllByUserIdOrderByConsentedAtAscIdAsc(second.user().id()).stream()
+                .map(consent -> consent.getId().toString()).toList();
+        assertTrue(expectedIds.stream().noneMatch(secondIds::contains));
+    }
+
+    @Test
+    void consentListIsEmptyWithoutRecordsAndRequiresAuthentication() throws Exception {
+        var login = loginService.login("code");
+        consents.deleteAll();
+        mvc.perform(get("/api/v1/users/me/consents").header("Authorization", "Bearer " + login.accessToken()))
+                .andExpect(status().isOk()).andExpect(content().json("[]"));
+        mvc.perform(get("/api/v1/users/me/consents"))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.message").value("인증이 필요합니다."));
+        mvc.perform(get("/api/v1/users/me/consents").header("Authorization", "Bearer invalid"))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.message").value("인증이 필요합니다."));
+    }
+
+    @Test
+    void explicitConsentCreatesOneRecordAndRepeatsSameResponse() throws Exception {
+        var login = loginService.login("code");
+        consents.deleteAll();
+        String body = "{\"policyType\":\"terms_of_service\",\"policyVersion\":\"terms-v1\"}";
+        var first = mvc.perform(post("/api/v1/users/me/consents")
+                .header("Authorization", "Bearer " + login.accessToken()).contentType("application/json").content(body))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.policyType").value("terms_of_service"))
+                .andExpect(jsonPath("$.policyVersion").value("terms-v1"))
+                .andExpect(jsonPath("$.consentedAt").value(org.hamcrest.Matchers.endsWith("+09:00")))
+                .andReturn().getResponse().getContentAsString();
+        mvc.perform(post("/api/v1/users/me/consents")
+                .header("Authorization", "Bearer " + login.accessToken()).contentType("application/json").content(body))
+                .andExpect(status().isOk()).andExpect(content().json(first));
+        assertEquals(1, consents.count());
+        assertTrue(consents.findByUserIdAndPolicyTypeAndPolicyVersion(login.user().id(), "terms_of_service", "terms-v1").isPresent());
+    }
+
+    @Test
+    void signupConsentIsReusedWithoutNewRecord() throws Exception {
+        var login = loginService.login("code");
+        var existing = consents.findByUserIdAndPolicyTypeAndPolicyVersion(login.user().id(), "privacy_policy", "privacy-v1").orElseThrow();
+        mvc.perform(post("/api/v1/users/me/consents").header("Authorization", "Bearer " + login.accessToken())
+                .contentType("application/json").content("{\"policyType\":\"privacy_policy\",\"policyVersion\":\"privacy-v1\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(existing.getId().toString()));
+        assertEquals(2, consents.count());
+    }
+
+    @Test
+    void consentRejectsUnregisteredPoliciesAndUnauthenticatedRequests() throws Exception {
+        var login = loginService.login("code");
+        for (String body : new String[]{"{}", "{bad", "{\"policyType\":\"unknown\",\"policyVersion\":\"terms-v1\"}",
+                "{\"policyType\":\"terms_of_service\",\"policyVersion\":\"unknown\"}"}) {
+            mvc.perform(post("/api/v1/users/me/consents").header("Authorization", "Bearer " + login.accessToken())
+                    .contentType("application/json").content(body))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("잘못된 요청입니다."));
+        }
+        mvc.perform(post("/api/v1/users/me/consents").contentType("application/json").content("{}"))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.message").value("인증이 필요합니다."));
+        assertEquals(2, consents.count());
+    }
+
+    @Test
     void publicLoginMatchesResponseContractWithoutCsrf() throws Exception {
         mvc.perform(post("/api/v1/auth/kakao").contentType("application/json")
                 .content("{\"authorizationCode\":\"valid-code\"}"))

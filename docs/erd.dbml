@@ -1,0 +1,931 @@
+Project FinSight {
+  database_type: 'PostgreSQL'
+}
+
+// =====================================================
+// ENUMS
+// =====================================================
+
+Enum auth_provider {
+  kakao
+}
+
+Enum policy_type {
+  terms_of_service
+  privacy_policy
+}
+
+Enum interest_type {
+  market
+  topic
+}
+
+Enum news_content_type {
+  live
+  replay
+}
+
+Enum replay_status {
+  not_eligible
+  eligible
+  featured
+}
+
+Enum news_status {
+  draft
+  published
+  archived
+}
+
+Enum source_type {
+  original_article
+  official_statistic
+  government_release
+  central_bank_release
+  research_report
+}
+
+Enum source_selection_tier {
+  primary_official
+  original_article
+  trusted_research
+}
+
+Enum market_category {
+  korea_equity
+  us_equity
+  sector
+  fx
+  rate
+  commodity
+}
+
+Enum target_type {
+  stock
+  index
+  etf
+  exchange_rate
+  yield
+  commodity
+}
+
+Enum session_type {
+  live
+  replay
+}
+
+Enum learning_status {
+  drafting
+  baseline_pending
+  observing
+  reflection_pending
+  completed
+}
+
+Enum prediction_direction {
+  up
+  down
+  neutral
+}
+
+Enum baseline_status {
+  pending
+  ready
+  unavailable
+}
+
+Enum outcome_status {
+  pending
+  ready
+  unavailable
+}
+
+Enum outcome_exception_status {
+  none
+  market_holiday
+  trading_halt
+  data_missing
+  delisted
+  long_term_halt
+}
+
+Enum feedback_stage {
+  initial
+  final
+}
+
+Enum feedback_status {
+  pending
+  generating
+  ready
+  failed
+}
+
+Enum feedback_item_type {
+  flow_summary
+  initial_uncertainty
+  initial_counter_scenario
+  initial_factor_to_review
+  final_observed_flow
+  final_co_observed_factors
+  final_reflection_improvement
+  final_next_hypothesis
+  interpretation_limit
+}
+
+Enum reflection_type {
+  day_1
+  day_5
+  final
+  replay_final
+}
+
+Enum reflection_prompt_key {
+  new_insight
+  added_perspective
+  learned
+  missed_variable
+  next_check
+}
+
+Enum outcome_collection_event_type {
+  market_holiday
+  trading_halt
+  trading_resumed
+  data_missing
+  unavailable
+}
+
+// =====================================================
+// USERS
+// =====================================================
+
+Table users {
+  id uuid [pk]
+
+  auth_provider auth_provider [not null, default: 'kakao']
+
+  provider_user_id varchar [not null, unique]
+
+  display_name varchar
+
+  onboarding_completed_at timestamptz
+
+  created_at timestamptz [not null]
+
+  updated_at timestamptz [not null]
+}
+
+// =====================================================
+// USER CONSENTS
+// =====================================================
+
+Table user_consents {
+  id uuid [pk]
+
+  user_id uuid [not null]
+
+  policy_type policy_type [not null]
+
+  policy_version varchar [not null]
+
+  consented_at timestamptz [not null]
+
+  indexes {
+    (user_id, policy_type, policy_version) [unique]
+  }
+}
+
+// =====================================================
+// USER INTERESTS
+// =====================================================
+
+Table user_interests {
+  id uuid [pk]
+
+  user_id uuid [not null]
+
+  interest_type interest_type [not null]
+
+  interest_key varchar [not null]
+
+  created_at timestamptz [not null]
+
+  indexes {
+    (user_id, interest_type, interest_key) [unique]
+  }
+}
+
+// =====================================================
+// NEWS
+// =====================================================
+
+Table news {
+  id uuid [pk]
+
+  content_type news_content_type [not null, default: 'live']
+
+  replay_status replay_status [not null, default: 'not_eligible']
+
+  title varchar [not null]
+
+  category varchar [not null]
+
+  briefing text [not null]
+
+  published_at timestamptz [not null]
+
+  reference_at timestamptz [not null]
+
+  curated_at timestamptz
+
+  status news_status [not null, default: 'draft']
+
+  created_at timestamptz [not null]
+
+  updated_at timestamptz [not null]
+
+  indexes {
+    (status, curated_at)
+    (content_type, replay_status)
+    (category, published_at)
+  }
+}
+
+// =====================================================
+// SOURCE DOCUMENTS
+// 승인 완료 자료만 저장
+// =====================================================
+
+Table source_documents {
+  id uuid [pk]
+
+  news_id uuid
+
+  source_type source_type [not null]
+
+  selection_tier source_selection_tier [not null]
+
+  publisher varchar [not null]
+
+  title varchar [not null]
+
+  url varchar [not null]
+
+  published_at timestamptz [not null, note: '승인 완료 자료는 공개 시각 필수']
+
+  is_primary boolean [not null, default: false]
+
+  content_hash varchar [not null, note: '본문 변경 시 새 문서 ID와 새 조각으로 저장. 기존 본문·인용은 불변 보존']
+
+  content_storage_uri varchar
+
+  retrieved_at timestamptz [not null]
+
+  created_at timestamptz [not null]
+
+  updated_at timestamptz [not null]
+
+  indexes {
+    (news_id, is_primary)
+    (url, content_hash) [unique]
+    (published_at, selection_tier)
+  }
+}
+
+// =====================================================
+// SOURCE DOCUMENT CHUNKS
+// 본문 조각은 문서와 함께 불변 보존
+// =====================================================
+
+Table source_document_chunks {
+  id uuid [pk]
+
+  source_document_id uuid [not null]
+
+  content text [not null]
+
+  chunk_order integer [not null]
+
+  created_at timestamptz [not null]
+
+  indexes {
+    (source_document_id, chunk_order) [unique]
+    (id, source_document_id) [unique]
+  }
+}
+
+// =====================================================
+// SOURCE DOCUMENT TARGETS
+// 뉴스 직접 연결 외에 시장 대상이 일치하는 승인 자료 검색용
+// =====================================================
+
+Table source_document_targets {
+  source_document_id uuid [not null]
+  market_target_id uuid [not null]
+
+  indexes {
+    (source_document_id, market_target_id) [pk]
+    (market_target_id, source_document_id)
+  }
+}
+
+// =====================================================
+// NEWS FACTS
+// =====================================================
+
+Table news_facts {
+  id uuid [pk]
+
+  news_id uuid [not null]
+
+  source_document_id uuid
+
+  label varchar [not null]
+
+  value_text varchar [not null]
+
+  unit varchar
+
+  as_of_at timestamptz
+
+  sort_order integer [not null]
+
+  indexes {
+    (news_id, sort_order) [unique]
+  }
+}
+
+// =====================================================
+// MARKET TARGETS
+// =====================================================
+
+Table market_targets {
+  id uuid [pk]
+
+  code varchar [not null, unique]
+
+  display_name varchar [not null]
+
+  market_category market_category [not null]
+
+  target_type target_type [not null]
+
+  direction_labels jsonb [not null]
+
+  unit varchar [not null]
+
+  calendar_code varchar [
+    not null,
+    note: '정규 거래 세션 계산용 캘린더 코드'
+  ]
+
+  timezone varchar [
+    not null,
+    note: '시장 기준 IANA timezone'
+  ]
+
+  data_symbol varchar [
+    not null,
+    note: '시장 데이터 API 조회용 symbol'
+  ]
+
+  is_active boolean [not null, default: true]
+
+  created_at timestamptz [not null]
+
+  updated_at timestamptz [not null]
+}
+
+// =====================================================
+// NEWS TARGET CANDIDATES
+// =====================================================
+
+Table news_target_candidates {
+  news_id uuid [not null]
+
+  market_target_id uuid [not null]
+
+  rationale text
+
+  sort_order integer [not null]
+
+  indexes {
+    (news_id, market_target_id) [pk]
+    (news_id, sort_order) [unique]
+  }
+}
+
+// =====================================================
+// LEARNING SESSIONS
+// =====================================================
+
+Table learning_sessions {
+  id uuid [pk]
+
+  user_id uuid [not null]
+
+  news_id uuid [not null]
+
+  session_type session_type [not null, default: 'live']
+
+  status learning_status [not null, default: 'drafting']
+
+  results_revealed_at timestamptz
+
+  saved_at timestamptz
+
+  submitted_at timestamptz
+
+  completed_at timestamptz
+
+  created_at timestamptz [not null]
+
+  updated_at timestamptz [not null]
+
+  indexes {
+    (user_id, news_id) [unique]
+    (user_id, updated_at)
+  }
+
+  Note: 'P0는 live만 생성. 화면 진입 시 생성하지 않으며 임시 저장·최종 제출 흐름에서 생성. 같은 사용자·뉴스의 기존 세션 재사용. 최종 회고 저장으로 completed 전환; AI 생성 상태와 분리.'
+}
+
+// =====================================================
+// SESSION TARGETS
+// =====================================================
+
+Table session_targets {
+  id uuid [pk]
+
+  learning_session_id uuid [not null]
+
+  market_target_id uuid [not null]
+
+  is_selected boolean [
+    not null,
+    default: true,
+    note: '현재 선택 여부. 제출 전 해제 시 false로 변경하며 기존 예측 데이터는 보존'
+  ]
+
+  sort_order integer [
+    note: '선택 상태일 때 허용값 1~3. 해제 상태에서는 NULL 허용'
+  ]
+
+  created_at timestamptz [not null]
+
+  indexes {
+    (learning_session_id, market_target_id) [unique]
+    (learning_session_id, sort_order) [unique]
+  }
+}
+
+// =====================================================
+// SESSION TARGET BASELINES
+// T0
+// =====================================================
+
+Table session_target_baselines {
+  id uuid [pk]
+
+  session_target_id uuid [not null, unique]
+
+  status baseline_status [not null, default: 'pending']
+
+  expected_baseline_date date [not null, note: '제출 후 첫 정규 거래 세션의 종가 확정 예정일']
+
+  baseline_deadline_date date [not null, note: '예정일 제외 이후 정규 거래 세션 10회째. 그날 종가까지 확인']
+
+  baseline_session_date date
+
+  baseline_at timestamptz
+
+  baseline_value decimal(20,6)
+
+  unit varchar [not null]
+
+  data_source_name varchar
+
+  data_source_url varchar
+
+  unavailable_reason text
+
+  updated_at timestamptz [not null]
+
+  indexes {
+    (id, session_target_id) [unique]
+  }
+}
+
+// =====================================================
+// PREDICTIONS
+// =====================================================
+
+Table predictions {
+  id uuid [pk]
+
+  session_target_id uuid [not null]
+
+  horizon smallint [
+    not null,
+    note: '허용값: 1, 5, 20'
+  ]
+
+  direction prediction_direction [
+    note: '초안에서는 NULL 허용. 최종 제출 시 필수. submitted_at이 있는 행에는 NULL 불가; 추가 SQL 제약 참고'
+  ]
+
+  reason text [
+    note: '대상·기간별 판단 이유. 현재 선택 대상 최대 3개 × T1/T5/T20 = 최대 9개. 임시 저장은 이유 0개 허용. 최종 제출은 is_selected=true 대상들의 전체 예측 중 공백이 아닌 이유 최소 1개 필요. 해제 대상 이유는 제외하며 유효한 원문 보존'
+  ]
+
+  submitted_at timestamptz
+
+  created_at timestamptz [not null]
+
+  updated_at timestamptz [not null]
+
+  indexes {
+    (session_target_id, horizon) [unique]
+  }
+}
+
+// =====================================================
+// MARKET OBSERVATIONS
+// =====================================================
+
+Table market_observations {
+  id uuid [pk]
+
+  session_target_id uuid [not null]
+
+  baseline_id uuid [not null]
+
+  horizon smallint [
+    not null,
+    note: '허용값: 1, 5, 20'
+  ]
+
+  status outcome_status [not null, default: 'pending']
+
+  exception_status outcome_exception_status [not null, default: 'none']
+
+  reference_at timestamptz [not null]
+
+  expected_observation_date date
+
+  observation_deadline_date date
+
+  observation_session_date date
+
+  observed_at timestamptz
+
+  observed_value decimal(20,6)
+
+  observation_delay_sessions integer [
+    not null,
+    default: 0,
+    note: '0 이상의 값'
+  ]
+
+  change_value decimal(20,6)
+
+  change_percent decimal(12,6)
+
+  usable_for_ai_evidence boolean [
+    not null,
+    default: false
+  ]
+
+  unit varchar [not null]
+
+  data_source_name varchar
+
+  data_source_url varchar
+
+  unavailable_reason text [note: 'status=unavailable이면 관측 종료 사유. 추정 관측값은 저장하지 않음']
+
+  updated_at timestamptz [not null]
+
+  indexes {
+    (session_target_id, horizon) [unique]
+  }
+}
+
+// =====================================================
+// OUTCOME SERIES POINTS
+// =====================================================
+
+Table outcome_series_points {
+  id uuid [pk]
+
+  session_target_id uuid [not null]
+
+  trading_date date [not null]
+
+  close_value decimal(20,6) [not null]
+
+  unit varchar [not null]
+
+  data_source_name varchar [not null]
+
+  data_source_url varchar
+
+  indexes {
+    (session_target_id, trading_date) [unique]
+  }
+}
+
+// =====================================================
+// OUTCOME COLLECTION EVENTS
+// =====================================================
+
+Table outcome_collection_events {
+  id uuid [pk]
+
+  session_target_id uuid [not null]
+
+  horizon smallint [
+    note: 'NULL 또는 1, 5, 20'
+  ]
+
+  event_type outcome_collection_event_type [not null]
+
+  occurred_at timestamptz [not null]
+
+  detail text
+
+  data_source_name varchar
+
+  data_source_url varchar
+
+  created_at timestamptz [not null]
+}
+
+// =====================================================
+// AI FEEDBACKS
+// =====================================================
+
+Table ai_feedbacks {
+  id uuid [pk]
+
+  learning_session_id uuid [not null]
+
+  feedback_stage feedback_stage [not null]
+
+  status feedback_status [not null, default: 'pending']
+
+  version integer [
+    not null,
+    default: 1,
+    note: '1 이상의 값'
+  ]
+
+  is_latest boolean [not null, default: true]
+
+  request_id varchar [not null, unique]
+
+  retry_count integer [
+    not null,
+    default: 0,
+    note: '0 이상의 값'
+  ]
+
+  failure_code varchar
+
+  model_version varchar [note: '생성 전 pending/generating 또는 생성 실패 시 NULL 허용']
+
+  flow_summary text
+
+  prompt_version varchar [not null]
+
+  policy_version varchar [not null]
+
+  input_cutoff_at timestamptz [not null]
+
+  insufficient_evidence boolean [not null, default: false]
+
+  generated_at timestamptz
+
+  created_at timestamptz [not null]
+
+  updated_at timestamptz [not null]
+
+  indexes {
+    (learning_session_id, feedback_stage, version) [unique]
+  }
+}
+
+// =====================================================
+// AI FEEDBACK INPUT SNAPSHOTS
+// =====================================================
+
+Table ai_feedback_input_snapshots {
+  id uuid [pk]
+
+  ai_feedback_id uuid [not null, unique]
+
+  request_snapshot jsonb [not null, note: '실제 AI 요청 전체: 뉴스·사실·선택 대상·기간별 방향/이유·승인 문서/본문 조각·본문 해시·시장값·회고. 생성 당시 원문 및 요청을 불변 보존']
+
+  prediction_snapshot jsonb [not null]
+
+  market_baseline_snapshot jsonb
+
+  market_result_snapshot jsonb
+
+  reflection_snapshot jsonb
+
+  input_hash varchar [not null]
+
+  created_at timestamptz [not null]
+}
+
+// =====================================================
+// AI FEEDBACK ITEMS
+// =====================================================
+
+Table ai_feedback_items {
+  id uuid [pk]
+
+  ai_feedback_id uuid [not null]
+
+  session_target_id uuid [
+    note: 'NULL이면 세션 전체 피드백'
+  ]
+
+  item_type feedback_item_type [not null]
+
+  content text [not null]
+
+  variables_to_check jsonb
+
+  sort_order integer [not null]
+
+  indexes {
+    (ai_feedback_id, sort_order) [unique]
+  }
+}
+
+// =====================================================
+// AI FEEDBACK REFERENCES
+// =====================================================
+
+Table ai_feedback_references {
+  id uuid [pk]
+
+  ai_feedback_id uuid [not null]
+
+  source_document_id uuid [not null]
+
+  source_document_chunk_id uuid [not null]
+
+  citation_label varchar [not null]
+
+  citation_excerpt text
+
+  usage_context text
+
+  sort_order integer [not null]
+
+  indexes {
+    (ai_feedback_id, source_document_chunk_id) [unique]
+    (ai_feedback_id, sort_order) [unique]
+  }
+}
+
+// =====================================================
+// AI FEEDBACK ITEM REFERENCES
+// 피드백 항목별 referenceIds 저장. 같은 근거를 여러 항목에서 재사용 가능
+// =====================================================
+
+Table ai_feedback_item_references {
+  ai_feedback_item_id uuid [not null]
+  ai_feedback_reference_id uuid [not null]
+
+  indexes {
+    (ai_feedback_item_id, ai_feedback_reference_id) [pk]
+  }
+
+  Note: '양쪽 항목·근거는 반드시 같은 ai_feedback_id에 속해야 함. 서버가 검증한다.'
+}
+
+// =====================================================
+// REFLECTION SUBMISSIONS
+// 한 저장 요청과 다중 질문 답변을 묶고 네트워크 재시도 중복을 방지
+// =====================================================
+
+Table reflection_submissions {
+  id uuid [pk]
+  learning_session_id uuid [not null]
+  client_request_id uuid [not null]
+  request_hash varchar [not null, note: '동일 요청 ID에 다른 본문이 오면 409. 동일 ID·동일 본문 재시도는 기존 결과 반환']
+  reflection_type reflection_type [not null]
+  created_at timestamptz [not null]
+
+  indexes {
+    (learning_session_id, client_request_id) [unique]
+  }
+
+  Note: 'P0 final은 세션 전체 회고. 질문 3개 중 유효 답변 1개 이상을 한 트랜잭션으로 저장하며 세션 completed/completed_at 갱신. 이후 다른 요청으로 final 재제출 불가. 부분 유일 인덱스는 동봉 SQL 참고.'
+}
+
+// =====================================================
+// REFLECTION NOTES
+// =====================================================
+
+Table reflection_notes {
+  id uuid [pk]
+
+  reflection_submission_id uuid [not null]
+
+  learning_session_id uuid [not null]
+
+  session_target_id uuid [
+    note: 'NULL이면 세션 전체 회고'
+  ]
+
+  reflection_type reflection_type [not null]
+
+  prompt_key reflection_prompt_key [not null]
+
+  body text [not null, note: '공백만인 답변은 저장하지 않음. 유효한 원문 보존. 저장 후 수정하지 않고 중간 메모는 새 요청으로 추가']
+
+  created_at timestamptz [not null]
+
+  indexes {
+    (reflection_submission_id, prompt_key) [unique]
+    (learning_session_id, created_at)
+  }
+}
+
+// =====================================================
+// RELATIONSHIPS
+// =====================================================
+
+// USER
+Ref: users.id < user_consents.user_id
+Ref: users.id < user_interests.user_id
+Ref: users.id < learning_sessions.user_id
+
+// NEWS
+Ref: news.id < source_documents.news_id
+Ref: news.id < news_facts.news_id
+Ref: news.id < news_target_candidates.news_id
+Ref: news.id < learning_sessions.news_id
+
+// SOURCE DOCUMENT
+Ref: source_documents.id < news_facts.source_document_id
+Ref: source_documents.id < source_document_chunks.source_document_id
+Ref: source_documents.id < ai_feedback_references.source_document_id
+Ref: source_document_chunks.(id, source_document_id) < ai_feedback_references.(source_document_chunk_id, source_document_id)
+Ref: source_documents.id < source_document_targets.source_document_id
+
+// MARKET TARGET
+Ref: market_targets.id < news_target_candidates.market_target_id
+Ref: market_targets.id < session_targets.market_target_id
+Ref: market_targets.id < source_document_targets.market_target_id
+
+// LEARNING SESSION
+Ref: learning_sessions.id < session_targets.learning_session_id
+Ref: learning_sessions.id < ai_feedbacks.learning_session_id
+Ref: learning_sessions.id < reflection_notes.learning_session_id
+Ref: learning_sessions.id < reflection_submissions.learning_session_id
+Ref: reflection_submissions.id < reflection_notes.reflection_submission_id
+
+// SESSION TARGET
+Ref: session_targets.id - session_target_baselines.session_target_id
+Ref: session_targets.id < predictions.session_target_id
+Ref: session_targets.id < market_observations.session_target_id
+Ref: session_targets.id < outcome_series_points.session_target_id
+Ref: session_targets.id < outcome_collection_events.session_target_id
+Ref: session_targets.id < ai_feedback_items.session_target_id
+Ref: session_targets.id < reflection_notes.session_target_id
+
+// BASELINE
+Ref: session_target_baselines.(id, session_target_id) < market_observations.(baseline_id, session_target_id)
+
+// AI FEEDBACK
+Ref: ai_feedbacks.id - ai_feedback_input_snapshots.ai_feedback_id
+Ref: ai_feedbacks.id < ai_feedback_items.ai_feedback_id
+Ref: ai_feedbacks.id < ai_feedback_references.ai_feedback_id
+Ref: ai_feedback_items.id < ai_feedback_item_references.ai_feedback_item_id
+Ref: ai_feedback_references.id < ai_feedback_item_references.ai_feedback_reference_id
+
+// =====================================================
+// 서비스 트랜잭션 검증 — DBML note만으로 DB에 강제되지 않음
+// =====================================================
+// 초안: 선택 0~3개, 방향·이유 모두 미작성 허용. 전달된 기간/필드만 갱신.
+// 제출: 선택 1~3개 + 모든 선택 대상 T1/T5/T20 방향 + 선택 대상 전체 이유 최소 1개.
+// 제출 검증·잠금·submitted_at 기록은 원자적으로 실행. 해제 대상은 제출/관측/AI 입력 제외.
+// 같은 세션의 대상/피드백 항목/인용/회고 관계를 서버에서 검증.
+// 관측 pending/unavailable에는 AI 증거 사용 금지. 모든 관측 종료 후 reflection_pending.
+// final 답변은 learned/missed_variable/next_check 중 중복 없이 1개 이상.
+// 중간 메모는 day_1=new_insight, day_5=added_perspective, 대상 ID 필수.
+// 해당 대상 T1/T5 결과가 ready/unavailable일 때만 신규 메모 허용; completed 이후 금지.
+// 동일 client_request_id 성공 재전송은 현재 상태 검사 전에 기존 저장 결과 반환.
+// final은 session_target_id=NULL; P0 replay_final 저장 금지.
+// T0 수집 예정일은 제출 후 첫 정규 거래 세션의 종가 확정 예정일이다. 그 예정일은 제외하고 이후 시장이 열린 정규 거래 세션 10회째 종가까지 확인한다. 휴장일은 제외하며 시장이 열린 거래정지일은 포함한다. 기한 안에 최초 유효 종가를 확보하면 해당 세션을 T0로 확정하고 그 이후부터 T1/T5/T20을 계산한다. 기한까지 확보하지 못하면 baseline과 해당 대상의 T1/T5/T20을 하나의 트랜잭션에서 unavailable로 종료한다. 다른 대상은 관측을 계속하며 종료 뒤 늦게 도착한 데이터로 자동 재개하지 않는다.
+// T0 실패 시 종속 관측 예정일·기한·실제 날짜·시각·수치·변화량은 NULL, 지연 횟수는 기본값 0, AI 증거 사용 false.
+// baseline pending 대상이 남으면 baseline_pending. 모두 ready/unavailable이고 결과 pending이면 observing.
+// 모든 결과 ready/unavailable이면 reflection_pending; 전 대상 T0 실패는 observing을 거치지 않는다.
+// 시장 참고값 API는 외부 데이터 조회/캐시 가능. 별도 영속 테이블을 요구하지 않음.

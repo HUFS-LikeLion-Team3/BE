@@ -7,7 +7,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "news_facts", indexes = @Index(name = "idx_news_facts_news_order", columnList = "news_id,sort_order"))
+@Table(name = "news_facts", uniqueConstraints = @UniqueConstraint(name = "uk_news_fact_order", columnNames = {"news_id", "sort_order"}))
 @Getter
 @NoArgsConstructor
 public class NewsFact {
@@ -15,6 +15,12 @@ public class NewsFact {
     private UUID id;
     @Column(name = "news_id", nullable = false)
     private UUID newsId;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "news_id", insertable = false, updatable = false)
+    private News news;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "source_document_id")
+    private com.finsight.feedback.entity.FeedbackSourceDocument sourceDocument;
     @Column(nullable = false)
     private String label;
     @Column(name = "value_text", nullable = false)

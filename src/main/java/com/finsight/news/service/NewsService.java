@@ -17,8 +17,7 @@ import java.util.*;
 @Transactional(readOnly = true)
 public class NewsService {
     private final NewsRepository news;
-    private final UserNewsInterestRepository interests;
-    private final NewsSourceRepository sources;
+    private final UserInterestRepository interests;
     private final NewsFactRepository facts;
     private final FeedbackSourceDocumentRepository documents;
     private final EntityManager em;
@@ -28,8 +27,8 @@ public class NewsService {
         if (page < 0 || size < 1 || size > 100 || (long) page * size > Integer.MAX_VALUE
                 || (contentType != null && !Set.of("live", "replay").contains(contentType))
                 || !Set.of("latest", "recommended").contains(sort)
-                || (category != null && !Set.of("rate").contains(category))
-                || (replayStatus != null && !Set.of("not_eligible").contains(replayStatus))) {
+                || (category != null && (category.isBlank() || category.length() > 255))
+                || (replayStatus != null && !Set.of("not_eligible", "eligible", "featured").contains(replayStatus))) {
             throw invalid();
         }
         var parameters = new HashMap<String, Object>();
@@ -42,21 +41,19 @@ public class NewsService {
         if (replayStatus != null) { query.append(" and n.replayStatus = :replayStatus"); parameters.put("replayStatus", replayStatus); }
         var scores = new ArrayList<String>();
         if ("recommended".equals(sort)) {
-            interests.findById(userId).ifPresent(i -> {
-                // Each matching market/topic adds one point, without filtering out other news.
+            {
+                // Topic keys match category; market keys match candidate market categories.
                 int index = 0;
-                for (String market : new TreeSet<>(i.getMarkets())) {
-                    String key = "market" + index++;
-                    scores.add("(case when :" + key + " member of n.markets then 1 else 0 end)");
-                    parameters.put(key, market);
+                for (UserInterest interest : interests.findByUserId(userId)) {
+                    String key = "interest" + index++;
+                    if (interest.getInterestType() == UserInterest.InterestType.market) {
+                        scores.add("(case when exists (select c from NewsTargetCandidate c where c.news = n and c.target.marketCategory = :" + key + ") then 1 else 0 end)");
+                    } else {
+                        scores.add("(case when n.category = :" + key + " then 1 else 0 end)");
+                    }
+                    parameters.put(key, interest.getInterestKey());
                 }
-                index = 0;
-                for (String topic : new TreeSet<>(i.getTopics())) {
-                    String key = "topic" + index++;
-                    scores.add("(case when :" + key + " member of n.topics then 1 else 0 end)");
-                    parameters.put(key, topic);
-                }
-            });
+            }
         }
         query.append(" order by ");
         if (!scores.isEmpty()) query.append(String.join(" + ", scores)).append(" desc, ");
@@ -81,7 +78,7 @@ public class NewsService {
     }
     public Sources sources(UUID id) {
         published(id);
-        return new Sources(sources.findSources(id).stream().map(s -> Source.from(s.getDocument())).toList());
+        return new Sources(documents.findByNewsIdOrderByIdAsc(id).stream().map(Source::from).toList());
     }
     public Document document(UUID id) {
         return Document.from(documents.findById(id).orElseThrow(() ->

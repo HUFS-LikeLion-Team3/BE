@@ -40,7 +40,8 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleMalformedJson(HttpMessageNotReadableException e,
             HttpServletRequest request) {
         return ResponseEntity.badRequest().body(new ErrorResponse(OffsetDateTime.now(KOREA_ZONE),
-                400, "Bad Request", "요청 JSON 형식이 올바르지 않습니다.", request.getRequestURI()));
+                400, "Bad Request", "/api/v1/users/me/consents".equals(request.getRequestURI())
+                        ? "잘못된 요청입니다." : "요청 JSON 형식이 올바르지 않습니다.", request.getRequestURI()));
     }
 
     @ExceptionHandler(ApiException.class)

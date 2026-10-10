@@ -4,7 +4,7 @@ import com.finsight.auth.entity.User;
 import com.finsight.auth.repository.UserRepository;
 import com.finsight.auth.service.TokenService;
 import com.finsight.news.entity.*;
-import com.finsight.news.repository.UserNewsInterestRepository;
+import com.finsight.news.repository.UserInterestRepository;
 import com.finsight.feedback.entity.FeedbackSourceDocument;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.*;
@@ -34,7 +34,8 @@ class NewsApiTests {
     @Autowired EntityManager em;
     @Autowired UserRepository users;
     @Autowired TokenService tokens;
-    @Autowired UserNewsInterestRepository interests;
+    @Autowired UserInterestRepository interests;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     MockMvc mvc;
     String token;
     UUID userId;
@@ -49,9 +50,20 @@ class NewsApiTests {
         News n = new News();
         Map<String, Object> values = Map.of("title", title, "status", status, "contentType", type,
                 "category", "rate", "briefing", "brief", "replayStatus", "not_eligible",
-                "publishedAt", at, "markets", new HashSet<>(markets), "topics", new HashSet<>(topics));
+                "publishedAt", at, "referenceAt", at);
         values.forEach((k, v) -> ReflectionTestUtils.setField(n, k, v));
         em.persist(n);
+        int order = 1;
+        for (String market : markets) {
+            MarketTarget target = new MarketTarget();
+            Map<String, Object> targetValues = Map.of("code", UUID.randomUUID().toString(),
+                    "displayName", market, "marketCategory", market.equals("US") ? "us_equity" : "korea_equity",
+                    "targetType", "index", "directionLabels", Map.of("up", "상승", "down", "하락", "neutral", "보합"),
+                    "unit", "point", "calendarCode", "TEST", "timezone", "Asia/Seoul", "dataSymbol", "TEST");
+            targetValues.forEach((k,v) -> ReflectionTestUtils.setField(target, k, v));
+            em.persist(target);
+            em.persist(new NewsTargetCandidate(n, target, order++));
+        }
         em.flush();
         return n;
     }
@@ -64,7 +76,8 @@ class NewsApiTests {
         mvc.perform(get("/api/v1/news").header("Authorization", token).param("sort", "recommended").param("contentType", "live"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].id").value(newest.getId().toString()))
                 .andExpect(jsonPath("$.content.length()").value(2));
-        interests.saveAndFlush(new UserNewsInterest(userId, Set.of("US"), Set.of("rates")));
+        interests.saveAndFlush(new UserInterest(users.getReferenceById(userId), UserInterest.InterestType.market, "us_equity"));
+        interests.saveAndFlush(new UserInterest(users.getReferenceById(userId), UserInterest.InterestType.topic, "rate"));
         mvc.perform(get("/api/v1/news").header("Authorization", token).param("sort", "recommended").param("size", "1").param("contentType", "live"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].id").value(match.getId().toString()))
                 .andExpect(jsonPath("$.hasNext").value(true));
@@ -72,9 +85,30 @@ class NewsApiTests {
                         .param("size", "1").param("page", "1").param("contentType", "live"))
                 .andExpect(jsonPath("$.content[0].id").value(newest.getId().toString()))
                 .andExpect(jsonPath("$.hasNext").value(false));
-        interests.saveAndFlush(new UserNewsInterest(userId, Set.of("KR"), Set.of()));
+        interests.deleteByUserId(userId);
+        interests.flush();
+        interests.saveAndFlush(new UserInterest(users.getReferenceById(userId), UserInterest.InterestType.market, "korea_equity"));
         mvc.perform(get("/api/v1/news").header("Authorization", token).param("sort", "recommended").param("contentType", "live"))
                 .andExpect(jsonPath("$.content[0].id").value(newest.getId().toString()));
+    }
+    @Test void schemaMatchesErdColumnsWithoutInventedTables() {
+        Map<String, Set<String>> expected = Map.of(
+            "NEWS", Set.of("ID","CONTENT_TYPE","REPLAY_STATUS","TITLE","CATEGORY","BRIEFING",
+                    "PUBLISHED_AT","REFERENCE_AT","CURATED_AT","STATUS","CREATED_AT","UPDATED_AT"),
+            "USER_INTERESTS", Set.of("ID","USER_ID","INTEREST_TYPE","INTEREST_KEY","CREATED_AT"),
+            "SOURCE_DOCUMENTS", Set.of("ID","NEWS_ID","SOURCE_TYPE","SELECTION_TIER","PUBLISHER",
+                    "TITLE","URL","PUBLISHED_AT","IS_PRIMARY","CONTENT_HASH","CONTENT_STORAGE_URI",
+                    "RETRIEVED_AT","CREATED_AT","UPDATED_AT"),
+            "NEWS_FACTS", Set.of("ID","NEWS_ID","SOURCE_DOCUMENT_ID","LABEL","VALUE_TEXT","UNIT","AS_OF_AT","SORT_ORDER"));
+        expected.forEach((table, columns) -> assertEquals(columns, new HashSet<>(jdbc.queryForList(
+                "select column_name from information_schema.columns where table_schema='PUBLIC' and table_name=?",
+                String.class, table))));
+        Set<String> tables = new HashSet<>(jdbc.queryForList(
+                "select table_name from information_schema.tables where table_schema='PUBLIC'", String.class));
+        for (String old : List.of("NEWS_SOURCES","NEWS_MARKETS","NEWS_TOPICS","USER_NEWS_INTERESTS",
+                "USER_INTEREST_MARKETS","USER_INTEREST_TOPICS")) {
+            assertFalse(tables.contains(old), old);
+        }
     }
     @Test void tiedResultsAndExplicitFiltersAreStable() throws Exception {
         Instant at = Instant.parse("2026-10-01T09:00:00Z");
@@ -144,7 +178,7 @@ class NewsApiTests {
             mvc.perform(get(path)).andExpect(status().isUnauthorized()).andExpect(jsonPath("$.message").value("로그인이 필요합니다."));
         }
         for (var entry : Map.of("page", "-1", "size", "101", "sort", "bad", "contentType", "bad",
-                "category", "bad", "replayStatus", "bad").entrySet()) {
+                "category", " ", "replayStatus", "bad").entrySet()) {
             mvc.perform(get("/api/v1/news").header("Authorization", token).param(entry.getKey(), entry.getValue()))
                     .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("유효하지 않은 뉴스 조회 조건입니다."));
         }
@@ -167,11 +201,8 @@ class NewsApiTests {
                 "url", "https://example.com", "publishedAt", OffsetDateTime.parse("2026-10-01T09:00:00Z"),
                 "primary", true, "contentHash", "sha256-example", "retrievedAt", Instant.parse("2026-10-01T09:10:00Z"));
         values.forEach((k,v) -> ReflectionTestUtils.setField(d, k, v));
+        ReflectionTestUtils.setField(d, "news", n);
         em.persist(d);
-        NewsSource s = new NewsSource();
-        ReflectionTestUtils.setField(s, "newsId", n.getId());
-        ReflectionTestUtils.setField(s, "document", d);
-        em.persist(s);
         em.flush();
         mvc.perform(get("/api/v1/news/" + n.getId()).header("Authorization", token))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.title").value("published"));

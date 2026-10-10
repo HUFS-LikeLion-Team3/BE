@@ -15,6 +15,7 @@ public class User {
     @Id @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
     @Column(name = "auth_provider", nullable = false, length = 30)
+    @org.hibernate.annotations.ColumnDefault("'kakao'")
     private String authProvider;
     @Column(name = "provider_user_id", nullable = false, length = 128)
     private String providerUserId;

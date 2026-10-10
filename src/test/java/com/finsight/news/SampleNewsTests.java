@@ -25,7 +25,7 @@ class SampleNewsTests {
         assertEquals(4, jdbc.queryForObject("select count(*) from news", Integer.class));
         assertEquals(2, jdbc.queryForObject("select count(*) from news where status='published' and content_type='live'", Integer.class));
         assertEquals(2, jdbc.queryForObject("select count(*) from source_documents", Integer.class));
-        assertEquals(2, jdbc.queryForObject("select count(*) from news_sources", Integer.class));
+        assertEquals(2, jdbc.queryForObject("select count(*) from source_documents where news_id is not null", Integer.class));
         assertEquals(2, jdbc.queryForObject("select count(*) from news_facts", Integer.class));
     }
 }

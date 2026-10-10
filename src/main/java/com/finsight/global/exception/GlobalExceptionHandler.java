@@ -16,6 +16,13 @@ public class GlobalExceptionHandler {
 
     private static final ZoneId KOREA_ZONE = ZoneId.of("Asia/Seoul");
 
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleMalformedJson(HttpMessageNotReadableException e,
+            HttpServletRequest request) {
+        return ResponseEntity.badRequest().body(new ErrorResponse(OffsetDateTime.now(KOREA_ZONE),
+                400, "Bad Request", "요청 JSON 형식이 올바르지 않습니다.", request.getRequestURI()));
+    }
+
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ErrorResponse> handleApiException(
             ApiException e,

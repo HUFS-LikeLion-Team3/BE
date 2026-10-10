@@ -11,11 +11,14 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
+import com.finsight.global.security.CurrentUser;
 
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/learning-sessions")
 public class OutcomeController {
+
+    private final CurrentUser currentUser;
 
     private final OutcomeService outcomeService;
 
@@ -26,8 +29,7 @@ public class OutcomeController {
         UUID parsedLearningSessionId =
                 parseLearningSessionId(learningSessionId);
 
-        // TODO 인증 연동 후 로그인 사용자 ID로 교체
-        UUID userId = UUID.randomUUID();
+        UUID userId = currentUser.id();
 
         return ResponseEntity.ok(
                 outcomeService.findAll(
@@ -48,8 +50,7 @@ public class OutcomeController {
         UUID parsedSessionTargetId =
                 parseSessionTargetId(sessionTargetId);
 
-        // TODO 인증 연동 후 로그인 사용자 ID로 교체
-        UUID userId = UUID.randomUUID();
+        UUID userId = currentUser.id();
 
         return ResponseEntity.ok(
                 outcomeService.findOne(
@@ -71,8 +72,7 @@ public class OutcomeController {
         UUID parsedSessionTargetId =
                 parseSessionTargetId(sessionTargetId);
 
-        // TODO 인증 연동 후 로그인 사용자 ID로 교체
-        UUID userId = UUID.randomUUID();
+        UUID userId = currentUser.id();
 
         return ResponseEntity.ok(
                 outcomeService.findSeries(

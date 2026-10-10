@@ -10,11 +10,14 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
+import com.finsight.global.security.CurrentUser;
 
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/learning-sessions")
 public class SessionTargetController {
+
+    private final CurrentUser currentUser;
 
     private final SessionTargetService sessionTargetService;
 
@@ -25,8 +28,7 @@ public class SessionTargetController {
     ) {
         UUID sessionId = parseLearningSessionId(learningSessionId);
 
-        // TODO: 인증 기능 구현 후 실제 로그인 userId로 교체
-        UUID userId = UUID.randomUUID();
+        UUID userId = currentUser.id();
 
         SessionTargetResponse response =
                 sessionTargetService.update(
@@ -44,8 +46,7 @@ public class SessionTargetController {
     ) {
         UUID sessionId = parseLearningSessionId(learningSessionId);
 
-        // TODO: 인증 기능 구현 후 실제 로그인 userId로 교체
-        UUID userId = UUID.randomUUID();
+        UUID userId = currentUser.id();
 
         SessionTargetResponse response =
                 sessionTargetService.findAll(

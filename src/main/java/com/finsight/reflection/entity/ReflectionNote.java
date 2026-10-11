@@ -6,6 +6,8 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Index;
+import jakarta.persistence.UniqueConstraint;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -13,7 +15,21 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "reflection_notes")
+@Table(
+        name = "reflection_notes",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_reflection_notes_submission_prompt",
+                        columnNames = {"reflection_submission_id", "prompt_key"}
+                )
+        },
+        indexes = {
+                @Index(
+                        name = "idx_reflection_notes_session_created",
+                        columnList = "learning_session_id, created_at"
+                )
+        }
+)
 @Getter
 @NoArgsConstructor
 public class ReflectionNote {
@@ -43,9 +59,6 @@ public class ReflectionNote {
     @Column(name = "reflection_submission_id", nullable = false)
     private UUID submissionId;
 
-    @Column(name = "client_request_id", nullable = false)
-    private UUID clientRequestId;
-
     public static ReflectionNote create(UUID sessionId, UUID targetId, String type,
                                         PromptKey key, String body, ReflectionSubmission submission,
                                         OffsetDateTime now) {
@@ -58,7 +71,6 @@ public class ReflectionNote {
         note.body = body;
         note.createdAt = now;
         note.submissionId = submission.getId();
-        note.clientRequestId = submission.getClientRequestId();
         return note;
     }
 

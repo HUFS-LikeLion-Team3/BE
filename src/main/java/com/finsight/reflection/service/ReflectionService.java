@@ -30,8 +30,11 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -46,8 +49,23 @@ public class ReflectionService {
 
     public List<ReflectionNoteResponse> findAll(UUID userId, UUID sessionId) {
         requireOwnedSession(userId, sessionId, false);
-        return noteRepository.findAllByLearningSessionIdOrderByCreatedAtAscIdAsc(sessionId)
-                .stream().map(ReflectionNoteResponse::from).toList();
+        List<ReflectionNote> notes = noteRepository.findAllByLearningSessionIdOrderByCreatedAtAscIdAsc(sessionId);
+        if (notes.isEmpty()) {
+            return List.of();
+        }
+
+        // Fetch submission metadata in one batch, preserving the note repository's sort order.
+        // reflection_notes stores only reflection_submission_id, never client_request_id.
+        Set<UUID> submissionIds = notes.stream()
+                .map(ReflectionNote::getSubmissionId)
+                .collect(Collectors.toSet());
+        Map<UUID, ReflectionSubmission> submissionsById = submissionRepository.findAllById(submissionIds)
+                .stream()
+                .collect(Collectors.toMap(ReflectionSubmission::getId, Function.identity()));
+
+        return notes.stream().map(note -> ReflectionNoteResponse.from(
+                note, requireSubmission(submissionsById, note.getSubmissionId()).getClientRequestId()
+        )).toList();
     }
 
     @Transactional
@@ -126,7 +144,7 @@ public class ReflectionService {
                 session.getId(), target.getId(),
                 request.reflectionType(),
                 key, request.body(), submission, OffsetDateTime.now()));
-        return ReflectionNoteResponse.from(note);
+        return ReflectionNoteResponse.from(note, submission.getClientRequestId());
     }
 
     private FinalReflectionResponse saveFinal(LearningSession session,
@@ -186,7 +204,7 @@ public class ReflectionService {
         // TODO: After the AI generation service has been merged, request final feedback
         // AFTER the transaction commits. AI failures must not revert completed sessions.
         return new FinalReflectionResponse(submission.getId(), request.clientRequestId(),
-                finalNotes(notes), session.getStatus().name(), session.getCompletedAt());
+                finalNotes(notes, submission.getClientRequestId()), session.getStatus().name(), session.getCompletedAt());
     }
 
     private Object replaySavedResponse(LearningSession session, ReflectionSubmission submission) {
@@ -197,13 +215,22 @@ public class ReflectionService {
         }
         if ("final".equals(saved.getFirst().getReflectionType())) {
             return new FinalReflectionResponse(submission.getId(), submission.getClientRequestId(),
-                    finalNotes(saved), LearningSession.LearningStatus.completed.name(),
+                    finalNotes(saved, submission.getClientRequestId()), LearningSession.LearningStatus.completed.name(),
                     session.getCompletedAt());
         }
-        return ReflectionNoteResponse.from(saved.getFirst());
+        return ReflectionNoteResponse.from(saved.getFirst(), submission.getClientRequestId());
     }
 
-    private static List<ReflectionNoteResponse> finalNotes(List<ReflectionNote> notes) {
+    private static ReflectionSubmission requireSubmission(
+            Map<UUID, ReflectionSubmission> submissions, UUID submissionId) {
+        ReflectionSubmission submission = submissions.get(submissionId);
+        if (submission == null) {
+            throw new IllegalStateException("Missing reflection submission for note: " + submissionId);
+        }
+        return submission;
+    }
+
+    private static List<ReflectionNoteResponse> finalNotes(List<ReflectionNote> notes, UUID clientRequestId) {
         return notes.stream()
                 .sorted(Comparator.comparingInt(note -> switch (note.getPromptKey()) {
                     case learned -> 0;
@@ -211,7 +238,7 @@ public class ReflectionService {
                     case next_check -> 2;
                     default -> 3;
                 }))
-                .map(ReflectionNoteResponse::from).toList();
+                .map(note -> ReflectionNoteResponse.from(note, clientRequestId)).toList();
     }
 
     private boolean hasTerminatedOutcome(UUID targetId, int horizon) {

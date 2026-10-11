@@ -16,11 +16,12 @@ public record ReflectionNoteResponse(
         UUID submissionId,
         UUID clientRequestId
 ) {
-    public static ReflectionNoteResponse from(ReflectionNote note) {
+    /** clientRequestId is stored in reflection_submissions, not reflection_notes. */
+    public static ReflectionNoteResponse from(ReflectionNote note, UUID clientRequestId) {
         return new ReflectionNoteResponse(
                 note.getId(), note.getLearningSessionId(), note.getSessionTargetId(),
                 note.getReflectionType(), note.getPromptKey().name(), note.getBody(),
-                note.getCreatedAt(), note.getSubmissionId(), note.getClientRequestId()
+                note.getCreatedAt(), note.getSubmissionId(), clientRequestId
         );
     }
 }

@@ -15,6 +15,7 @@ import com.finsight.reflection.entity.ReflectionSubmission;
 import com.finsight.reflection.repository.ReflectionNoteRepository;
 import com.finsight.reflection.repository.ReflectionSubmissionRepository;
 import com.finsight.reflection.service.ReflectionService;
+import jakarta.persistence.Table;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,6 +25,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.OffsetDateTime;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -61,6 +63,62 @@ class ReflectionServiceTest {
         when(notes.findAllByLearningSessionIdOrderByCreatedAtAscIdAsc(sessionId))
                 .thenReturn(List.of());
         assertTrue(service.findAll(owner, sessionId).isEmpty());
+    }
+
+    @Test
+    void listLoadsClientRequestIdFromSubmissionWithoutDuplicatingItOnNotes() {
+        when(sessions.findById(sessionId)).thenReturn(Optional.of(session));
+        UUID firstRequestId = UUID.randomUUID();
+        UUID secondRequestId = UUID.randomUUID();
+        ReflectionSubmission firstSubmission = ReflectionSubmission.create(
+                sessionId, firstRequestId, "hash-one", "day_1");
+        ReflectionSubmission secondSubmission = ReflectionSubmission.create(
+                sessionId, secondRequestId, "hash-two", "day_5");
+        ReflectionNote first = ReflectionNote.create(sessionId, targetId, "day_1",
+                ReflectionNote.PromptKey.new_insight, "첫 번째 메모", firstSubmission, OffsetDateTime.now());
+        ReflectionNote second = ReflectionNote.create(sessionId, targetId, "day_5",
+                ReflectionNote.PromptKey.added_perspective, "두 번째 메모", secondSubmission, OffsetDateTime.now());
+        when(notes.findAllByLearningSessionIdOrderByCreatedAtAscIdAsc(sessionId))
+                .thenReturn(List.of(first, second));
+        when(submissions.findAllById(any())).thenReturn(List.of(secondSubmission, firstSubmission));
+
+        List<ReflectionNoteResponse> response = service.findAll(owner, sessionId);
+
+        assertEquals(2, response.size());
+        assertEquals(List.of("new_insight", "added_perspective"),
+                response.stream().map(ReflectionNoteResponse::promptKey).toList());
+        assertEquals(List.of(firstRequestId, secondRequestId),
+                response.stream().map(ReflectionNoteResponse::clientRequestId).toList());
+        assertEquals(List.of(firstSubmission.getId(), secondSubmission.getId()),
+                response.stream().map(ReflectionNoteResponse::submissionId).toList());
+        verify(submissions, times(1)).findAllById(any());
+    }
+
+    @Test
+    void listDoesNotSilentlyReturnIncorrectClientRequestIdWhenSubmissionIsMissing() {
+        when(sessions.findById(sessionId)).thenReturn(Optional.of(session));
+        ReflectionSubmission submission = ReflectionSubmission.create(
+                sessionId, UUID.randomUUID(), "hash", "day_1");
+        ReflectionNote note = ReflectionNote.create(sessionId, targetId, "day_1",
+                ReflectionNote.PromptKey.new_insight, "메모", submission, OffsetDateTime.now());
+        when(notes.findAllByLearningSessionIdOrderByCreatedAtAscIdAsc(sessionId))
+                .thenReturn(List.of(note));
+        when(submissions.findAllById(any())).thenReturn(List.of());
+
+        assertThrows(IllegalStateException.class, () -> service.findAll(owner, sessionId));
+    }
+
+    @Test
+    void reflectionNoteFollowsFinalErdConstraints() {
+        Table table = ReflectionNote.class.getAnnotation(Table.class);
+        assertEquals("reflection_notes", table.name());
+        assertTrue(Arrays.stream(ReflectionNote.class.getDeclaredFields())
+                .noneMatch(field -> "clientRequestId".equals(field.getName())));
+        assertTrue(Arrays.stream(table.uniqueConstraints()).anyMatch(constraint ->
+                Arrays.equals(new String[]{"reflection_submission_id", "prompt_key"},
+                        constraint.columnNames())));
+        assertTrue(Arrays.stream(table.indexes()).anyMatch(index ->
+                "learning_session_id, created_at".equals(index.columnList())));
     }
 
     @Test
@@ -108,6 +166,7 @@ class ReflectionServiceTest {
         });
 
         ReflectionNoteResponse first = (ReflectionNoteResponse) service.create(owner, sessionId, request);
+        assertEquals(requestId, first.clientRequestId());
         when(submissions.findByLearningSessionIdAndClientRequestId(sessionId, requestId))
                 .thenReturn(Optional.of(savedSubmission.get()));
         when(notes.findAllBySubmissionIdOrderByCreatedAtAscIdAsc(savedSubmission.get().getId()))
@@ -159,6 +218,8 @@ class ReflectionServiceTest {
         FinalReflectionResponse response = (FinalReflectionResponse) service.create(owner, sessionId, request);
         assertEquals("completed", response.sessionStatus());
         assertEquals(2, response.notes().size());
+        assertTrue(response.notes().stream().allMatch(note ->
+                request.clientRequestId().equals(note.clientRequestId())));
         assertEquals("learned", response.notes().get(0).promptKey());
         assertNotNull(response.completedAt());
         assertEquals(LearningSession.LearningStatus.completed, session.getStatus());

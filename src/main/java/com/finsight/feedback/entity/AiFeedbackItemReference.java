@@ -22,6 +22,15 @@ public class AiFeedbackItemReference {
     @EmbeddedId
     private AiFeedbackItemReferenceId id;
 
+    public static AiFeedbackItemReference create(
+            UUID itemId,
+            UUID referenceId
+    ) {
+        AiFeedbackItemReference link = new AiFeedbackItemReference();
+        link.id = new AiFeedbackItemReferenceId(itemId, referenceId);
+        return link;
+    }
+
     public UUID getAiFeedbackItemId() {
         return id.getAiFeedbackItemId();
     }
@@ -35,7 +44,8 @@ public class AiFeedbackItemReference {
     @NoArgsConstructor
     @AllArgsConstructor
     @EqualsAndHashCode
-    public static class AiFeedbackItemReferenceId implements Serializable {
+    public static class AiFeedbackItemReferenceId
+            implements Serializable {
 
         @Column(name = "ai_feedback_item_id", nullable = false)
         private UUID aiFeedbackItemId;

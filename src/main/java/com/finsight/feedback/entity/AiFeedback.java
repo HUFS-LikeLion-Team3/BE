@@ -3,6 +3,8 @@ package com.finsight.feedback.entity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -50,7 +52,7 @@ public class AiFeedback {
     @Column(name = "feedback_stage", nullable = false)
     private FeedbackStage feedbackStage;
 
-    @jakarta.persistence.Enumerated(jakarta.persistence.EnumType.STRING)
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private FeedbackStatus status = FeedbackStatus.pending;
 
@@ -95,6 +97,80 @@ public class AiFeedback {
 
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
+
+    public static AiFeedback create(
+            UUID learningSessionId,
+            FeedbackStage feedbackStage,
+            int version,
+            String requestId,
+            String promptVersion,
+            String policyVersion,
+            OffsetDateTime inputCutoffAt
+    ) {
+        if (version < 1) {
+            throw new IllegalArgumentException("Feedback version must be at least 1.");
+        }
+
+        AiFeedback feedback = new AiFeedback();
+        feedback.learningSessionId = learningSessionId;
+        feedback.feedbackStage = feedbackStage;
+        feedback.status = FeedbackStatus.pending;
+        feedback.version = version;
+        feedback.isLatest = true;
+        feedback.requestId = requestId;
+        feedback.retryCount = 0;
+        feedback.promptVersion = promptVersion;
+        feedback.policyVersion = policyVersion;
+        feedback.inputCutoffAt = inputCutoffAt;
+        feedback.insufficientEvidence = false;
+
+        return feedback;
+    }
+
+    public void markGenerating() {
+        if (status != FeedbackStatus.pending) {
+            throw new IllegalStateException(
+                    "Only pending feedback can start generation."
+            );
+        }
+
+        status = FeedbackStatus.generating;
+        failureCode = null;
+    }
+
+    public void markReady(
+            String modelVersion,
+            String flowSummary,
+            boolean insufficientEvidence,
+            OffsetDateTime generatedAt
+    ) {
+        if (status != FeedbackStatus.generating) {
+            throw new IllegalStateException(
+                    "Only generating feedback can become ready."
+            );
+        }
+
+        this.status = FeedbackStatus.ready;
+        this.modelVersion = modelVersion;
+        this.flowSummary = flowSummary;
+        this.insufficientEvidence = insufficientEvidence;
+        this.generatedAt = generatedAt;
+        this.failureCode = null;
+    }
+
+    public void markFailed(String failureCode) {
+        if (status == FeedbackStatus.ready) {
+            return;
+        }
+
+        this.status = FeedbackStatus.failed;
+        this.failureCode = failureCode;
+        this.generatedAt = null;
+    }
+
+    public void markNotLatest() {
+        this.isLatest = false;
+    }
 
     @PrePersist
     protected void onCreate() {

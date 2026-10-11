@@ -1,10 +1,13 @@
 package com.finsight.learning.service;
 
+import com.finsight.auth.repository.UserRepository;
 import com.finsight.global.exception.ApiException;
 import com.finsight.learning.dto.LearningSessionDetailResponse;
 import com.finsight.learning.dto.LearningSessionListItemResponse;
 import com.finsight.learning.entity.LearningSession;
 import com.finsight.learning.repository.LearningSessionRepository;
+import com.finsight.news.entity.News;
+import com.finsight.news.repository.NewsRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -12,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -20,6 +24,8 @@ import java.util.UUID;
 public class LearningSessionService {
 
     private final LearningSessionRepository learningSessionRepository;
+    private final UserRepository userRepository;
+    private final NewsRepository newsRepository;
 
     @Transactional
     public SessionResult createOrGet(
@@ -27,33 +33,44 @@ public class LearningSessionService {
             UUID newsId,
             String sessionType
     ) {
+        // Replay creation is not part of P0. Never change an existing session on retry.
         if (!"live".equals(sessionType)) {
-            throw new ApiException(
-                    HttpStatus.BAD_REQUEST,
-                    "올바르지 않은 학습 세션 유형입니다."
-            );
+            throw new ApiException(HttpStatus.BAD_REQUEST, "올바르지 않은 학습 세션 유형입니다.");
+        }
+        if (newsId == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "newsId는 필수입니다.");
         }
 
-        return learningSessionRepository.findByUserIdAndNewsId(userId, newsId)
-                .map(session -> {
-                    if (!session.getSessionType().name().equals(sessionType)) {
-                        throw new ApiException(
-                                HttpStatus.CONFLICT,
-                                "기존 학습 세션의 유형과 일치하지 않습니다."
-                        );
-                    }
+        // Serialize create-or-get per user across application instances. A plain
+        // SELECT-then-INSERT can race and fail with 500 despite the unique index.
+        // Lock the persisted user *before* checking for an existing session;
+        // keep the (user_id, news_id) DB unique constraint as a second safeguard.
+        userRepository.findByIdForUpdate(userId).orElseThrow(() ->
+                new ApiException(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다."));
 
-                    return new SessionResult(session, false);
-                })
-                .orElseGet(() -> {
-                    LearningSession learningSession =
-                            LearningSession.create(userId, newsId);
+        Optional<LearningSession> existing =
+                learningSessionRepository.findByUserIdAndNewsId(userId, newsId);
+        if (existing.isPresent()) {
+            LearningSession session = existing.get();
+            if (session.getSessionType() != LearningSession.SessionType.live) {
+                throw new ApiException(HttpStatus.CONFLICT,
+                        "기존 학습 세션의 유형과 일치하지 않습니다.");
+            }
+            // Existing records remain accessible even if the news is archived
+            // after the initial creation; do not reset its status or timestamps.
+            return new SessionResult(session, false);
+        }
 
-                    return new SessionResult(
-                            learningSessionRepository.save(learningSession),
-                            true
-                    );
-                });
+        News news = newsRepository.findByIdAndStatus(newsId, "published")
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
+                        "해당 뉴스를 찾을 수 없습니다."));
+        if (!"live".equals(news.getContentType())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST,
+                    "현재 학습할 수 없는 뉴스입니다.");
+        }
+
+        LearningSession session = LearningSession.create(userId, newsId);
+        return new SessionResult(learningSessionRepository.saveAndFlush(session), true);
     }
 
     public Page<LearningSessionListItemResponse> findAll(

@@ -22,10 +22,10 @@ public record LearningSessionListItemResponse(
                 session.getNewsId(),
                 session.getSessionType().name(),
                 session.getStatus().name(),
-                session.getSubmittedAt(),
-                session.getCompletedAt(),
-                session.getCreatedAt(),
-                session.getUpdatedAt()
+                LearningSessionDateTime.toKorea(session.getSubmittedAt()),
+                LearningSessionDateTime.toKorea(session.getCompletedAt()),
+                LearningSessionDateTime.toKorea(session.getCreatedAt()),
+                LearningSessionDateTime.toKorea(session.getUpdatedAt())
         );
     }
 }

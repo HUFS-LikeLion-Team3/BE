@@ -15,6 +15,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.UUID;
 
 @Entity
@@ -30,6 +31,8 @@ import java.util.UUID;
 @Getter
 @NoArgsConstructor
 public class LearningSession {
+
+    private static final ZoneId KOREA_ZONE = ZoneId.of("Asia/Seoul");
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -69,18 +72,18 @@ public class LearningSession {
 
     @PrePersist
     protected void onCreate() {
-        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime now = OffsetDateTime.now(KOREA_ZONE);
         createdAt = now;
         updatedAt = now;
     }
 
     @PreUpdate
     protected void onUpdate() {
-        updatedAt = OffsetDateTime.now();
+        updatedAt = OffsetDateTime.now(KOREA_ZONE);
     }
 
     public void markSaved() {
-        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime now = OffsetDateTime.now(KOREA_ZONE);
         this.savedAt = now;
         this.updatedAt = now;
     }

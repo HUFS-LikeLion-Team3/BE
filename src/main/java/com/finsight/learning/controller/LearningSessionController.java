@@ -54,7 +54,7 @@ public class LearningSessionController {
 
     @GetMapping
     public ResponseEntity<LearningSessionListResponse> findAll(
-            @RequestParam(required = false) UUID newsId,
+            @RequestParam(required = false) String newsId,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String sessionType,
             @RequestParam(defaultValue = "0") int page,
@@ -62,17 +62,17 @@ public class LearningSessionController {
     ) {
         UUID userId = currentUser.id();
 
-        if (page < 0) {
+        if (page < 0 || (long) page * size > Integer.MAX_VALUE) {
             throw new ApiException(
                     HttpStatus.BAD_REQUEST,
-                    "page는 0 이상이어야 합니다."
+                    "잘못된 조회 조건입니다."
             );
         }
 
         if (size < 1 || size > 100) {
             throw new ApiException(
                     HttpStatus.BAD_REQUEST,
-                    "size는 1 이상 100 이하여야 합니다."
+                    "잘못된 조회 조건입니다."
             );
         }
 
@@ -85,7 +85,7 @@ public class LearningSessionController {
             } catch (IllegalArgumentException e) {
                 throw new ApiException(
                         HttpStatus.BAD_REQUEST,
-                        "올바르지 않은 status입니다."
+                        "잘못된 조회 조건입니다."
                 );
             }
         }
@@ -99,23 +99,26 @@ public class LearningSessionController {
             } catch (IllegalArgumentException e) {
                 throw new ApiException(
                         HttpStatus.BAD_REQUEST,
-                        "올바르지 않은 sessionType입니다."
+                        "잘못된 조회 조건입니다."
                 );
             }
         }
+
+        UUID parsedNewsId = newsId == null ? null
+                : parseUuid(newsId, "잘못된 조회 조건입니다.");
 
         var pageable = PageRequest.of(
                 page,
                 size,
                 Sort.by(
                         Sort.Order.desc("updatedAt"),
-                        Sort.Order.desc("id")
+                        Sort.Order.asc("id")
                 )
         );
 
         var sessions = learningSessionService.findAll(
                 userId,
-                newsId,
+                parsedNewsId,
                 learningStatus,
                 learningSessionType,
                 pageable
@@ -130,16 +133,8 @@ public class LearningSessionController {
     public ResponseEntity<LearningSessionDetailResponse> findById(
             @PathVariable String learningSessionId
     ) {
-        UUID sessionId;
-
-        try {
-            sessionId = UUID.fromString(learningSessionId);
-        } catch (IllegalArgumentException e) {
-            throw new ApiException(
-                    HttpStatus.BAD_REQUEST,
-                    "학습 세션 ID 형식이 올바르지 않습니다."
-            );
-        }
+        UUID sessionId = parseUuid(
+                learningSessionId, "학습 세션 ID 형식이 올바르지 않습니다.");
 
         UUID userId = currentUser.id();
 
@@ -150,5 +145,18 @@ public class LearningSessionController {
                 );
 
         return ResponseEntity.ok(response);
+    }
+
+    private static UUID parseUuid(String raw, String message) {
+        try {
+            UUID parsed = UUID.fromString(raw);
+            // UUID.fromString accepts some noncanonical shortened forms.
+            if (parsed.toString().equalsIgnoreCase(raw)) {
+                return parsed;
+            }
+        } catch (IllegalArgumentException ignored) {
+            // Return the API-defined validation response below.
+        }
+        throw new ApiException(HttpStatus.BAD_REQUEST, message);
     }
 }

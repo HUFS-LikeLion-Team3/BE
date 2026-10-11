@@ -64,7 +64,7 @@ public class PredictionService {
 
     public PredictionResponse findByTarget(UUID userId, UUID sessionId, UUID targetId) {
         LearningSession session = getSession(sessionId);
-        validateOwner(session, userId);
+        validateOwner(session, userId, "해당 예측을 조회할 권한이 없습니다.");
         // Deselecting a target does not erase its saved predictions.
         getTarget(sessionId, targetId);
         return new PredictionResponse(targetId, allThree(targetId));
@@ -73,7 +73,7 @@ public class PredictionService {
     @Transactional
     public PredictionSubmitResponse submit(UUID userId, UUID sessionId) {
         LearningSession session = getSessionForUpdate(sessionId);
-        validateOwner(session, userId);
+        validateOwner(session, userId, "해당 학습 세션을 제출할 권한이 없습니다.");
         if (session.getStatus() != LearningSession.LearningStatus.drafting) {
             throw new ApiException(HttpStatus.CONFLICT, "이미 최종 제출된 학습 세션입니다.");
         }
@@ -177,8 +177,12 @@ public class PredictionService {
     }
 
     private void validateOwner(LearningSession session, UUID userId) {
+        validateOwner(session, userId, "해당 학습 세션에 접근할 권한이 없습니다.");
+    }
+
+    private void validateOwner(LearningSession session, UUID userId, String message) {
         if (!session.getUserId().equals(userId)) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "해당 학습 세션에 접근할 권한이 없습니다.");
+            throw new ApiException(HttpStatus.FORBIDDEN, message);
         }
     }
 

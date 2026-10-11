@@ -154,10 +154,31 @@ class PredictionServiceTest {
 
     @Test
     void wrongOwnerDenied() {
-        when(sessionRepo.findById(sessionId)).thenReturn(Optional.of(session));
-        ApiException error = assertThrows(ApiException.class, () -> service.findByTarget(
-                UUID.randomUUID(), sessionId, targetId));
+        ApiException error = assertThrows(ApiException.class,
+                () -> service.findByTarget(
+                        UUID.randomUUID(), sessionId, targetId));
+
         assertEquals(HttpStatus.FORBIDDEN, error.getStatus());
+        assertEquals("해당 예측을 조회할 권한이 없습니다.", error.getMessage());
+    }
+
+    @Test
+    void submitWrongOwnerDenied() {
+        UUID otherUserId = UUID.randomUUID();
+
+        ApiException error = assertThrows(
+                ApiException.class,
+                () -> service.submit(otherUserId, sessionId)
+        );
+
+        assertEquals(HttpStatus.FORBIDDEN, error.getStatus());
+        assertEquals(
+                "해당 학습 세션을 제출할 권한이 없습니다.",
+                error.getMessage()
+        );
+
+        // 권한이 없는 사용자는 제출 이벤트를 발생시킬 수 없음
+        verify(publisher, never()).publishEvent(any(Object.class));
     }
 
     @Test

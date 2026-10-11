@@ -31,3 +31,12 @@ auth:
   policy:
     terms-version: ${TERMS_VERSION:test-v1}
     privacy-version: ${PRIVACY_POLICY_VERSION:test-v1}
+
+finsight:
+  ai:
+    enabled: ${AI_FEEDBACK_ENABLED:true}
+    prompt-version: ${AI_PROMPT_VERSION:feedback-p0-v1}
+    policy-version: ${AI_POLICY_VERSION:feedback-policy-p0-v1}
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+      model: ${OPENAI_MODEL:gpt-5.6}

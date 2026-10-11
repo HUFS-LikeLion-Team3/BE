@@ -14,6 +14,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import jakarta.persistence.EntityManager;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -32,6 +33,7 @@ public class PredictionService {
     private final SessionTargetRepository sessionTargetRepository;
     private final PredictionRepository predictionRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final EntityManager entityManager;
 
     @Transactional
     public PredictionUpdateResponse update(
@@ -56,7 +58,8 @@ public class PredictionService {
             predictionRepository.save(prediction);
         }
         session.markSaved();
-        return new PredictionUpdateResponse(targetId, allThree(targetId), session.getSavedAt());
+        learningSessionRepository.flush();
+        return new PredictionUpdateResponse(targetId, allThree(targetId), session.getUpdatedAt());
     }
 
     public PredictionResponse findByTarget(UUID userId, UUID sessionId, UUID targetId) {
@@ -83,7 +86,27 @@ public class PredictionService {
                     "예측 대상은 1개 이상 3개 이하로 선택해야 합니다.");
         }
 
-        // News candidate validation belongs to the Market/News integration (same TODO as part 6).
+        // 선택된 시장 대상이 해당 뉴스의 예측 후보인지 검증
+        List<UUID> marketTargetIds = selectedTargets.stream()
+                .map(SessionTarget::getMarketTargetId)
+                .toList();
+
+        Long candidateCount = entityManager.createQuery(
+                        "SELECT COUNT(c) FROM NewsTargetCandidate c " +
+                                "WHERE c.news.id = :newsId " +
+                                "AND c.target.id IN :marketTargetIds",
+                        Long.class
+                )
+                .setParameter("newsId", session.getNewsId())
+                .setParameter("marketTargetIds", marketTargetIds)
+                .getSingleResult();
+
+        if (candidateCount.longValue() != marketTargetIds.size()) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "해당 뉴스의 예측 후보가 아닌 시장 대상이 포함되어 있습니다."
+            );
+        }
         List<UUID> targetIds = selectedTargets.stream().map(SessionTarget::getId).toList();
         List<Prediction> predictions = predictionRepository.findAllBySessionTargetIdIn(targetIds);
         Map<UUID, Map<Integer, Prediction>> indexed = predictions.stream()

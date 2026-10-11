@@ -80,7 +80,9 @@ public class LearningSession {
     }
 
     public void markSaved() {
-        this.savedAt = OffsetDateTime.now();
+        OffsetDateTime now = OffsetDateTime.now();
+        this.savedAt = now;
+        this.updatedAt = now;
     }
 
     /** Freeze all prediction inputs and move to baseline collection state. */

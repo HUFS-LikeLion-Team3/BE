@@ -16,6 +16,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.TypedQuery;
+
 import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +40,8 @@ class PredictionServiceTest {
     private PredictionRepository predictionRepo;
     private ApplicationEventPublisher publisher;
     private PredictionService service;
+    private EntityManager entityManager;
+    private TypedQuery<Long> candidateQuery;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -50,7 +55,26 @@ class PredictionServiceTest {
         targetRepo = mock(SessionTargetRepository.class);
         predictionRepo = mock(PredictionRepository.class);
         publisher = mock(ApplicationEventPublisher.class);
-        service = new PredictionService(sessionRepo, targetRepo, predictionRepo, publisher);
+        entityManager = mock(EntityManager.class);
+        candidateQuery = mock(TypedQuery.class);
+
+        service = new PredictionService(
+                sessionRepo,
+                targetRepo,
+                predictionRepo,
+                publisher,
+                entityManager
+        );
+
+        // 뉴스 후보 검증 조회 Mock
+        when(entityManager.createQuery(anyString(), eq(Long.class)))
+                .thenReturn(candidateQuery);
+
+        when(candidateQuery.setParameter(anyString(), any()))
+                .thenReturn(candidateQuery);
+
+        // 기본적으로 해당 뉴스의 정상적인 예측 후보라고 가정
+        when(candidateQuery.getSingleResult()).thenReturn(1L);
 
         when(sessionRepo.findByIdForUpdate(sessionId)).thenReturn(Optional.of(session));
         when(sessionRepo.findById(sessionId)).thenReturn(Optional.of(session));
@@ -71,6 +95,7 @@ class PredictionServiceTest {
         assertEquals("up", response.predictions().get(0).direction());
         assertEquals("변경", response.predictions().get(0).reason());
         assertNotNull(response.updatedAt());
+        assertEquals(session.getUpdatedAt(), response.updatedAt());
         assertEquals(3, response.predictions().size());
 
         var explicitlyNull = new java.util.HashMap<String, Object>();
@@ -133,6 +158,33 @@ class PredictionServiceTest {
         ApiException error = assertThrows(ApiException.class, () -> service.findByTarget(
                 UUID.randomUUID(), sessionId, targetId));
         assertEquals(HttpStatus.FORBIDDEN, error.getStatus());
+    }
+
+    @Test
+    void submitRejectsMarketTargetNotInNewsCandidates() {
+        // 선택된 예측 대상 1개
+        when(targetRepo.findAllByLearningSessionId(sessionId))
+                .thenReturn(List.of(target));
+
+        // 해당 뉴스의 예측 후보가 아닌 경우
+        when(candidateQuery.getSingleResult()).thenReturn(0L);
+
+        ApiException error = assertThrows(
+                ApiException.class,
+                () -> service.submit(userId, sessionId)
+        );
+
+        // 400 Bad Request 반환
+        assertEquals(HttpStatus.BAD_REQUEST, error.getStatus());
+
+        // 학습 세션 상태 변경 없음
+        assertEquals(
+                LearningSession.LearningStatus.drafting,
+                session.getStatus()
+        );
+
+        // 최종 제출 이벤트 발생하지 않음
+        verify(publisher, never()).publishEvent(any(Object.class));
     }
 
     private List<Prediction> fullPredictions(boolean hasReason) {

@@ -97,6 +97,21 @@ public class LearningSession {
         this.status = LearningStatus.baseline_pending;
     }
 
+    /**
+     * Monotonic transitions driven by persisted market outcomes. Never move backwards,
+     * and never override a session that has not been submitted or has completed.
+     */
+    public void advanceMarketStatus(LearningStatus target) {
+        if (target != LearningStatus.observing && target != LearningStatus.reflection_pending) {
+            throw new IllegalArgumentException("Invalid market status transition: " + target);
+        }
+        if (this.status == LearningStatus.baseline_pending
+                || (this.status == LearningStatus.observing
+                    && target == LearningStatus.reflection_pending)) {
+            this.status = target;
+        }
+    }
+
     // Used only after the final reflection and all its notes are saved in one transaction.
     public void markCompleted(OffsetDateTime completedAt) {
         this.status = LearningStatus.completed;

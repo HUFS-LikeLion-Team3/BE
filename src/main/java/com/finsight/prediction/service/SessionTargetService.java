@@ -52,7 +52,12 @@ public class SessionTargetService {
             UUID learningSessionId,
             SessionTargetUpdateRequest request
     ) {
-        LearningSession session = getSession(learningSessionId);
+        LearningSession session = learningSessionRepository
+                .findByIdForUpdate(learningSessionId)
+                .orElseThrow(() -> new ApiException(
+                        HttpStatus.NOT_FOUND,
+                        "해당 학습 세션을 찾을 수 없습니다."
+                ));
 
         validateOwner(session, userId);
         validateModifiable(session);

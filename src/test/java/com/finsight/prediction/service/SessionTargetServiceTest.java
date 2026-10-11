@@ -56,7 +56,7 @@ class SessionTargetServiceTest {
         UUID validTargetId = UUID.randomUUID();
         UUID invalidTargetId = UUID.randomUUID();
 
-        when(learningSessionRepository.findById(sessionId))
+        when(learningSessionRepository.findByIdForUpdate(sessionId))
                 .thenReturn(Optional.of(session));
 
         when(session.getUserId()).thenReturn(userId);
@@ -126,7 +126,7 @@ class SessionTargetServiceTest {
         UUID sessionId = UUID.randomUUID();
         UUID nonexistentTargetId = UUID.randomUUID();
 
-        when(learningSessionRepository.findById(sessionId))
+        when(learningSessionRepository.findByIdForUpdate(sessionId))
                 .thenReturn(Optional.of(session));
 
         when(session.getUserId()).thenReturn(userId);
@@ -177,7 +177,7 @@ class SessionTargetServiceTest {
         UUID newsId = UUID.randomUUID();
         UUID targetId = UUID.randomUUID();
 
-        when(learningSessionRepository.findById(sessionId))
+        when(learningSessionRepository.findByIdForUpdate(sessionId))
                 .thenReturn(Optional.of(session));
 
         when(session.getUserId()).thenReturn(userId);
@@ -227,6 +227,9 @@ class SessionTargetServiceTest {
         assertDoesNotThrow(() ->
                 sessionTargetService.update(userId, sessionId, request)
         );
+
+        // 학습 세션 조회 시 비관적 락 메서드 사용 확인
+        verify(learningSessionRepository).findByIdForUpdate(sessionId);
 
         // 정상 후보는 저장 로직까지 진행
         verify(sessionTargetRepository).save(any());

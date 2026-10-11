@@ -43,7 +43,7 @@ class MarketTargetApiTests {
         Map<String, Object> fields = Map.of("code", code, "displayName", "미국 10년물 국채금리",
                 "marketCategory", category, "targetType", type,
                 "directionLabels", Map.of("up", "상승", "down", "하락", "neutral", "큰 방향성 없음"),
-                "unit", "%", "calendarCode", "TEST", "timezone", "America/New_York", "dataSymbol", code,
+                "unit", type.equals("index") ? "point" : "%", "calendarCode", "TEST", "timezone", "America/New_York", "dataSymbol", code,
                 "active", active);
         fields.forEach((key, value) -> ReflectionTestUtils.setField(target, key, value));
         em.persist(target);

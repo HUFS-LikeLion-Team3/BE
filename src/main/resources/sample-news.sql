@@ -1,6 +1,6 @@
 -- ERD 기반 API 확인용 가상 데이터. 실제 금융 뉴스가 아닙니다.
 -- 기존 샘플 대상의 단위도 재실행 시 갱신한다.
-UPDATE market_targets SET unit='%', updated_at=CURRENT_TIMESTAMP WHERE (id=X'55555555555545558555555555555555' AND code='SAMPLE_US' OR id=X'66666666666646668666666666666666' AND code='SAMPLE_KR') AND unit='point';
+UPDATE market_targets SET unit='point', updated_at=CURRENT_TIMESTAMP WHERE (id=X'55555555555545558555555555555555' AND code='SAMPLE_US' OR id=X'66666666666646668666666666666666' AND code='SAMPLE_KR') AND unit='%';
 INSERT INTO news (id,title,category,briefing,content_type,replay_status,status,published_at,reference_at,curated_at,created_at,updated_at)
 SELECT X'11111111111141118111111111111111','[샘플] 미국 기준금리 동결','rate','API 테스트를 위한 가상 금리 뉴스입니다.','live','not_eligible','published','2026-10-01 09:00:00','2026-10-01 09:00:00','2026-10-01 09:00:00','2026-10-01 09:00:00','2026-10-01 09:00:00'
 WHERE NOT EXISTS (SELECT 1 FROM news WHERE id=X'11111111111141118111111111111111');
@@ -27,12 +27,12 @@ SELECT X'eeeeeeeeeeee4eee8eeeeeeeeeeeeee2',X'22222222222242228222222222222222',X
 WHERE NOT EXISTS (SELECT 1 FROM news_facts WHERE id=X'eeeeeeeeeeee4eee8eeeeeeeeeeeeee2');
 DELETE FROM news_facts WHERE id=X'eeeeeeeeeeee4eee8eeeeeeeeeeeeee3' AND news_id=X'22222222222242228222222222222222';
 INSERT INTO market_targets (id,code,display_name,market_category,target_type,direction_labels,unit,calendar_code,timezone,data_symbol,is_active,created_at,updated_at)
-SELECT X'55555555555545558555555555555555','SAMPLE_US','[샘플] 미국 지수','us_equity','index','{"up":"상승","down":"하락","neutral":"보합"}','%','SAMPLE','America/New_York','SAMPLE',true,'2026-10-01 09:00:00','2026-10-01 09:00:00'
+SELECT X'55555555555545558555555555555555','SAMPLE_US','[샘플] 미국 지수','us_equity','index','{"up":"상승","down":"하락","neutral":"보합"}','point','SAMPLE','America/New_York','SAMPLE',true,'2026-10-01 09:00:00','2026-10-01 09:00:00'
 WHERE NOT EXISTS (SELECT 1 FROM market_targets WHERE id=X'55555555555545558555555555555555');
 INSERT INTO news_target_candidates (news_id,market_target_id,rationale,sort_order) SELECT X'11111111111141118111111111111111',X'55555555555545558555555555555555','가상 대상',1 WHERE NOT EXISTS (SELECT 1 FROM news_target_candidates WHERE news_id=X'11111111111141118111111111111111' AND market_target_id=X'55555555555545558555555555555555');
 INSERT INTO news_target_candidates (news_id,market_target_id,rationale,sort_order) SELECT X'33333333333343338333333333333333',X'55555555555545558555555555555555','가상 대상',1 WHERE NOT EXISTS (SELECT 1 FROM news_target_candidates WHERE news_id=X'33333333333343338333333333333333' AND market_target_id=X'55555555555545558555555555555555');
 INSERT INTO market_targets (id,code,display_name,market_category,target_type,direction_labels,unit,calendar_code,timezone,data_symbol,is_active,created_at,updated_at)
-SELECT X'66666666666646668666666666666666','SAMPLE_KR','[샘플] 한국 지수','korea_equity','index','{"up":"상승","down":"하락","neutral":"보합"}','%','SAMPLE','Asia/Seoul','SAMPLE',true,'2026-10-01 09:00:00','2026-10-01 09:00:00'
+SELECT X'66666666666646668666666666666666','SAMPLE_KR','[샘플] 한국 지수','korea_equity','index','{"up":"상승","down":"하락","neutral":"보합"}','point','SAMPLE','Asia/Seoul','SAMPLE',true,'2026-10-01 09:00:00','2026-10-01 09:00:00'
 WHERE NOT EXISTS (SELECT 1 FROM market_targets WHERE id=X'66666666666646668666666666666666');
 INSERT INTO news_target_candidates (news_id,market_target_id,rationale,sort_order) SELECT X'22222222222242228222222222222222',X'66666666666646668666666666666666','가상 대상',1 WHERE NOT EXISTS (SELECT 1 FROM news_target_candidates WHERE news_id=X'22222222222242228222222222222222' AND market_target_id=X'66666666666646668666666666666666');
 INSERT INTO news_target_candidates (news_id,market_target_id,rationale,sort_order) SELECT X'44444444444444448444444444444444',X'66666666666646668666666666666666','가상 대상',1 WHERE NOT EXISTS (SELECT 1 FROM news_target_candidates WHERE news_id=X'44444444444444448444444444444444' AND market_target_id=X'66666666666646668666666666666666');

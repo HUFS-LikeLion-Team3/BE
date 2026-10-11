@@ -60,7 +60,7 @@ class NewsApiTests {
             Map<String, Object> targetValues = Map.of("code", UUID.randomUUID().toString(),
                     "displayName", market, "marketCategory", market.equals("US") ? "us_equity" : "korea_equity",
                     "targetType", "index", "directionLabels", Map.of("up", "상승", "down", "하락", "neutral", "보합"),
-                    "unit", "%", "calendarCode", "TEST", "timezone", "Asia/Seoul", "dataSymbol", "TEST");
+                    "unit", "point", "calendarCode", "TEST", "timezone", "Asia/Seoul", "dataSymbol", "TEST");
             targetValues.forEach((k,v) -> ReflectionTestUtils.setField(target, k, v));
             em.persist(target);
             em.persist(new NewsTargetCandidate(n, target, order++));
@@ -85,7 +85,7 @@ class NewsApiTests {
                 .andExpect(jsonPath("$.candidates[0].marketCategory").value(first.getTarget().getMarketCategory()))
                 .andExpect(jsonPath("$.candidates[0].targetType").value("index"))
                 .andExpect(jsonPath("$.candidates[0].directionLabels.up").value("상승"))
-                .andExpect(jsonPath("$.candidates[0].unit").value("%"))
+                .andExpect(jsonPath("$.candidates[0].unit").value("point"))
                 .andExpect(jsonPath("$.candidates[0].rationale").value("미국 금리 정책 변화와 직접 관련된 시장 대상입니다."))
                 .andExpect(jsonPath("$.candidates[0].sortOrder").value(1))
                 .andExpect(jsonPath("$.candidates[1].sortOrder").value(2))

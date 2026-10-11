@@ -48,7 +48,7 @@ public class User {
 
     public void completeOnboarding() {
         if (onboardingCompletedAt == null) {
-            onboardingCompletedAt = Instant.now();
+            onboardingCompletedAt = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         }
     }
 }

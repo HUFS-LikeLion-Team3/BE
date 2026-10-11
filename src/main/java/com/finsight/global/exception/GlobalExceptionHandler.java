@@ -40,9 +40,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleTypeMismatch(
             org.springframework.web.method.annotation.MethodArgumentTypeMismatchException e,
             HttpServletRequest request) {
-        String message = request.getRequestURI().equals("/api/v1/news")
+        String path = request.getRequestURI();
+        String message = path.equals("/api/v1/news")
                 ? "유효하지 않은 뉴스 조회 조건입니다."
-                : "요청 값의 형식이 올바르지 않습니다.";
+                : path.equals("/api/v1/learning-sessions")
+                  ? "잘못된 조회 조건입니다."
+                  : "요청 값의 형식이 올바르지 않습니다.";
         return ResponseEntity.badRequest().body(new ErrorResponse(OffsetDateTime.now(KOREA_ZONE),
                 400, "Bad Request", message, request.getRequestURI()));
     }

@@ -189,6 +189,168 @@ class ReflectionServiceTest {
         verify(submissions, never()).save(any());
     }
 
+    @Test
+    void finalRejectsNewRequestAfterCompletion() {
+        // 이미 최종 회고가 완료된 세션
+        prepareSession(LearningSession.LearningStatus.completed);
+
+        // 새로운 clientRequestId로 최종 회고 재제출
+        ReflectionCreateRequest request = new ReflectionCreateRequest(
+                UUID.randomUUID(),
+                null,
+                "final",
+                null,
+                null,
+                List.of(
+                        new ReflectionCreateRequest.Answer(
+                                "learned", "새로운 최종 회고"
+                        )
+                )
+        );
+
+        ApiException ex = assertThrows(
+                ApiException.class,
+                () -> service.create(owner, sessionId, request)
+        );
+
+        // 명세서에 따라 409 Conflict
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+
+        // 세션은 completed 상태 유지
+        assertEquals(
+                LearningSession.LearningStatus.completed,
+                session.getStatus()
+        );
+
+        // 중복 회고가 저장되지 않아야 함
+        verify(submissions, never()).save(any());
+        verify(notes, never()).saveAll(any());
+    }
+
+    @Test
+    void finalRetryReturnsSavedResponseWithoutDuplicateInsert() {
+        prepareSession(LearningSession.LearningStatus.reflection_pending);
+        stubTarget();
+
+        SessionTarget selectedTarget = targets.findById(targetId).orElseThrow();
+        when(targets.findAllByLearningSessionId(sessionId))
+                .thenReturn(List.of(selectedTarget));
+
+        when(observations.findAllBySessionTargetIdOrderByHorizonAsc(targetId))
+                .thenReturn(List.of(
+                        observation(1, MarketObservation.OutcomeStatus.ready),
+                        observation(5, MarketObservation.OutcomeStatus.ready),
+                        observation(20, MarketObservation.OutcomeStatus.ready)
+                ));
+
+        UUID requestId = UUID.randomUUID();
+
+        ReflectionCreateRequest request = new ReflectionCreateRequest(
+                requestId,
+                null,
+                "final",
+                null,
+                null,
+                List.of(new ReflectionCreateRequest.Answer("learned", "배운 점"))
+        );
+
+        AtomicReference<ReflectionSubmission> savedSubmission = new AtomicReference<>();
+        AtomicReference<List<ReflectionNote>> savedNotes = new AtomicReference<>();
+
+        when(submissions.save(any())).thenAnswer(inv -> {
+            ReflectionSubmission submission = inv.getArgument(0);
+            savedSubmission.set(submission);
+            return submission;
+        });
+
+        when(notes.saveAll(any())).thenAnswer(inv -> {
+            List<ReflectionNote> result = inv.getArgument(0);
+            savedNotes.set(result);
+            return result;
+        });
+
+        // 첫 번째 요청: 정상 저장
+        FinalReflectionResponse first =
+                (FinalReflectionResponse) service.create(owner, sessionId, request);
+
+        assertEquals("completed", first.sessionStatus());
+
+        // 두 번째 요청: 동일한 clientRequestId와 동일한 본문
+        when(submissions.findByLearningSessionIdAndClientRequestId(sessionId, requestId))
+                .thenReturn(Optional.of(savedSubmission.get()));
+
+        when(notes.findAllBySubmissionIdOrderByCreatedAtAscIdAsc(
+                savedSubmission.get().getId()))
+                .thenReturn(savedNotes.get());
+
+        FinalReflectionResponse repeated =
+                (FinalReflectionResponse) service.create(owner, sessionId, request);
+
+        // 기존 응답과 동일해야 함
+        assertEquals(first, repeated);
+
+        // 두 번 요청해도 DB 저장 호출은 한 번씩만 발생해야 함
+        verify(submissions, times(1)).save(any());
+        verify(notes, times(1)).saveAll(any());
+    }
+
+    @Test
+    void finalRejectsDuplicatePromptKeys() {
+        prepareSession(LearningSession.LearningStatus.reflection_pending);
+
+        ReflectionCreateRequest request = new ReflectionCreateRequest(
+                UUID.randomUUID(),
+                null,
+                "final",
+                null,
+                null,
+                List.of(
+                        new ReflectionCreateRequest.Answer("learned", "첫 번째 답변"),
+                        new ReflectionCreateRequest.Answer("learned", "두 번째 답변")
+                )
+        );
+
+        ApiException ex = assertThrows(
+                ApiException.class,
+                () -> service.create(owner, sessionId, request)
+        );
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+
+        // 잘못된 요청은 DB에 저장하지 않아야 함
+        verify(submissions, never()).save(any());
+        verify(notes, never()).saveAll(any());
+    }
+
+    @Test
+    void finalRejectsAllBlankAnswers() {
+        prepareSession(LearningSession.LearningStatus.reflection_pending);
+
+        ReflectionCreateRequest request = new ReflectionCreateRequest(
+                UUID.randomUUID(),
+                null,
+                "final",
+                null,
+                null,
+                List.of(
+                        new ReflectionCreateRequest.Answer("learned", "   "),
+                        new ReflectionCreateRequest.Answer("missed_variable", ""),
+                        new ReflectionCreateRequest.Answer("next_check", "\t")
+                )
+        );
+
+        ApiException ex = assertThrows(
+                ApiException.class,
+                () -> service.create(owner, sessionId, request)
+        );
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+
+        // 유효한 답변이 없으므로 저장하지 않아야 함
+        verify(submissions, never()).save(any());
+        verify(notes, never()).saveAll(any());
+    }
+
     private ReflectionSubmission captureSubmission(ReflectionCreateRequest original) {
         AtomicReference<ReflectionSubmission> captured = new AtomicReference<>();
         // The stubs were set by the calling test.

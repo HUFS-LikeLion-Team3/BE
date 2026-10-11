@@ -21,6 +21,7 @@ public class NewsService {
     private final NewsFactRepository facts;
     private final FeedbackSourceDocumentRepository documents;
     private final EntityManager em;
+    private final NewsTargetCandidateRepository candidates;
 
     public ListResponse list(UUID userId, String category, String contentType, String replayStatus,
                              String sort, int page, int size) {
@@ -79,6 +80,10 @@ public class NewsService {
                 new ApiException(HttpStatus.NOT_FOUND, "뉴스를 찾을 수 없습니다."));
     }
     public Detail detail(UUID id) { return Detail.from(published(id)); }
+    public Candidates targetCandidates(UUID id) {
+        published(id);
+        return new Candidates(candidates.findCandidates(id).stream().map(Candidate::from).toList());
+    }
     public Facts facts(UUID id) {
         published(id);
         return new Facts(facts.findByNewsIdOrderBySortOrderAscIdAsc(id).stream().map(Fact::from).toList());

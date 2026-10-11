@@ -1,0 +1,17 @@
+market:
+  data:
+    twelve-data:
+      api-key: ${TWELVE_DATA_API_KEY:}
+      base-url: https://api.twelvedata.com
+    confirmation-delay: PT15M
+    max-lookback-days: 14
+    us-equity-calendar-mode: official
+
+spring:
+  jpa:
+    defer-datasource-initialization: true
+  sql:
+    init:
+      mode: always
+      encoding: UTF-8
+      data-locations: classpath:market-targets-real.sql

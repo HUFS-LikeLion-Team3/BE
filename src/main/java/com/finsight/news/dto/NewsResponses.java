@@ -30,6 +30,17 @@ public final class NewsResponses {
         }
     }
     public record Sources(List<Source> sources) {}
+    public record Candidates(List<Candidate> candidates) {}
+    public record Candidate(UUID marketTargetId, String code, String displayName, String marketCategory,
+                            String targetType, Map<String, String> directionLabels, String unit,
+                            String rationale, int sortOrder) {
+        public static Candidate from(com.finsight.news.entity.NewsTargetCandidate candidate) {
+            var target = candidate.getTarget();
+            return new Candidate(target.getId(), target.getCode(), target.getDisplayName(),
+                    target.getMarketCategory(), target.getTargetType(), target.getDirectionLabels(),
+                    target.getUnit(), candidate.getRationale(), candidate.getSortOrder());
+        }
+    }
     public record Fact(UUID id, String label, String valueText, String unit, Instant asOfAt, int sortOrder) {
         public static Fact from(com.finsight.news.entity.NewsFact f) {
             return new Fact(f.getId(), f.getLabel(), f.getValueText(), f.getUnit(), f.getAsOfAt(), f.getSortOrder());

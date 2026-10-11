@@ -4,6 +4,7 @@ import com.finsight.auth.entity.User;
 import com.finsight.auth.repository.UserRepository;
 import com.finsight.auth.service.TokenService;
 import com.finsight.news.entity.*;
+import com.finsight.market.entity.MarketTarget;
 import com.finsight.news.repository.UserInterestRepository;
 import com.finsight.feedback.entity.FeedbackSourceDocument;
 import jakarta.persistence.EntityManager;
@@ -68,6 +69,48 @@ class NewsApiTests {
         em.flush();
         return n;
     }
+    @Test void targetCandidatesJoinTargetsAndSortByOrder() throws Exception {
+        News n = news("candidates", "published", "live", Instant.now(), Set.of("US", "KR"), Set.of());
+        News other = news("other", "published", "live", Instant.now(), Set.of("OTHER"), Set.of());
+        var rows = em.createQuery("select c from NewsTargetCandidate c where c.news.id = :id order by c.sortOrder", NewsTargetCandidate.class)
+                .setParameter("id", n.getId()).getResultList();
+        var first = rows.getFirst();
+        ReflectionTestUtils.setField(first, "rationale", "미국 금리 정책 변화와 직접 관련된 시장 대상입니다.");
+        ReflectionTestUtils.setField(first.getTarget(), "active", false);
+        em.flush();
+        mvc.perform(get("/api/v1/news/{id}/target-candidates", n.getId()).header("Authorization", token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.candidates.length()").value(2))
+                .andExpect(jsonPath("$.candidates[0].marketTargetId").value(first.getTarget().getId().toString()))
+                .andExpect(jsonPath("$.candidates[0].code").value(first.getTarget().getCode()))
+                .andExpect(jsonPath("$.candidates[0].displayName").value(first.getTarget().getDisplayName()))
+                .andExpect(jsonPath("$.candidates[0].marketCategory").value(first.getTarget().getMarketCategory()))
+                .andExpect(jsonPath("$.candidates[0].targetType").value("index"))
+                .andExpect(jsonPath("$.candidates[0].directionLabels.up").value("상승"))
+                .andExpect(jsonPath("$.candidates[0].unit").value("point"))
+                .andExpect(jsonPath("$.candidates[0].rationale").value("미국 금리 정책 변화와 직접 관련된 시장 대상입니다."))
+                .andExpect(jsonPath("$.candidates[0].sortOrder").value(1))
+                .andExpect(jsonPath("$.candidates[1].sortOrder").value(2))
+                .andExpect(jsonPath("$.candidates[1].rationale").value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    @Test void targetCandidatesHandleEmptyMissingAndUnpublishedNews() throws Exception {
+        News empty = news("empty", "published", "live", Instant.now(), Set.of(), Set.of());
+        mvc.perform(get("/api/v1/news/{id}/target-candidates", empty.getId()).header("Authorization", token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.candidates").isEmpty());
+        News draft = news("draft", "draft", "live", Instant.now(), Set.of("US"), Set.of());
+        for (UUID id : List.of(UUID.randomUUID(), draft.getId())) {
+            mvc.perform(get("/api/v1/news/{id}/target-candidates", id).header("Authorization", token))
+                    .andExpect(status().isNotFound()).andExpect(jsonPath("$.status").value(404))
+                    .andExpect(jsonPath("$.error").value("Not Found"))
+                    .andExpect(jsonPath("$.message").value("뉴스를 찾을 수 없습니다."))
+                    .andExpect(jsonPath("$.path").value("/api/v1/news/" + id + "/target-candidates"));
+        }
+        mvc.perform(get("/api/v1/news/{id}/target-candidates", empty.getId()))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/news/not-a-uuid/target-candidates").header("Authorization", token))
+                .andExpect(status().isBadRequest());
+    }
+
     @Test void recommendationUsesCurrentInterestsBeforePaginationAndKeepsUnmatchedNews() throws Exception {
         Instant at = Instant.parse("2026-10-01T09:00:00Z");
         News newest = news("newest", "published", "live", at.plusSeconds(100), Set.of("KR"), Set.of());

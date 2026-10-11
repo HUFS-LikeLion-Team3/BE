@@ -1,4 +1,5 @@
 package com.finsight.news.entity;
+import com.finsight.market.entity.MarketTarget;
 import jakarta.persistence.*;
 import lombok.*;
 import java.io.Serializable;

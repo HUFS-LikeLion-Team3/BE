@@ -1,4 +1,4 @@
-package com.finsight.news.entity;
+package com.finsight.market.entity;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;

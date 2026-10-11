@@ -7,4 +7,5 @@ import java.util.UUID;
 
 public interface FeedbackSourceDocumentRepository
         extends JpaRepository<FeedbackSourceDocument, UUID> {
+    java.util.List<FeedbackSourceDocument> findByNewsIdOrderByIdAsc(UUID newsId);
 }

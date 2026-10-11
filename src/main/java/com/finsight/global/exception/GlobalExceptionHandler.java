@@ -48,12 +48,33 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<ErrorResponse> handleMalformedJson(HttpMessageNotReadableException e,
-            HttpServletRequest request) {
-        return ResponseEntity.badRequest().body(new ErrorResponse(OffsetDateTime.now(KOREA_ZONE),
-                400, "Bad Request", "/api/v1/users/me/interests".equals(request.getRequestURI())
-                        ? "유효하지 않은 관심사 정보입니다." : "/api/v1/users/me/consents".equals(request.getRequestURI())
-                        ? "잘못된 요청입니다." : "요청 JSON 형식이 올바르지 않습니다.", request.getRequestURI()));
+    public ResponseEntity<ErrorResponse> handleMalformedJson(
+            HttpMessageNotReadableException e,
+            HttpServletRequest request
+    ) {
+        String path = request.getRequestURI();
+
+        boolean isInterestApi = "/api/v1/users/me/interests".equals(path);
+        boolean isConsentApi = "/api/v1/users/me/consents".equals(path);
+        boolean isReflectionApi = path.matches(
+                "^/api/v1/learning-sessions/[^/]+/reflections$"
+        );
+
+        String message = isInterestApi
+                ? "유효하지 않은 관심사 정보입니다."
+                : (isConsentApi || isReflectionApi)
+                  ? "잘못된 요청입니다."
+                  : "요청 JSON 형식이 올바르지 않습니다.";
+
+        return ResponseEntity.badRequest().body(
+                new ErrorResponse(
+                        OffsetDateTime.now(KOREA_ZONE),
+                        400,
+                        "Bad Request",
+                        message,
+                        path
+                )
+        );
     }
 
     @ExceptionHandler(ApiException.class)

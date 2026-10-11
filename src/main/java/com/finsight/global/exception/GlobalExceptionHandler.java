@@ -16,6 +16,17 @@ public class GlobalExceptionHandler {
 
     private static final ZoneId KOREA_ZONE = ZoneId.of("Asia/Seoul");
 
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleUnsupportedMethod(
+            org.springframework.web.HttpRequestMethodNotSupportedException e,
+            HttpServletRequest request) {
+        var response = ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED);
+        var supported = e.getSupportedHttpMethods();
+        if (supported != null) response.allow(supported.toArray(org.springframework.http.HttpMethod[]::new));
+        return response.body(new ErrorResponse(OffsetDateTime.now(KOREA_ZONE),
+                405, "Method Not Allowed", "지원하지 않는 HTTP 메서드입니다.", request.getRequestURI()));
+    }
+
     @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
     public ResponseEntity<ErrorResponse> handleMissingResource(
             org.springframework.web.servlet.resource.NoResourceFoundException e,
@@ -40,7 +51,8 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleMalformedJson(HttpMessageNotReadableException e,
             HttpServletRequest request) {
         return ResponseEntity.badRequest().body(new ErrorResponse(OffsetDateTime.now(KOREA_ZONE),
-                400, "Bad Request", "/api/v1/users/me/consents".equals(request.getRequestURI())
+                400, "Bad Request", "/api/v1/users/me/interests".equals(request.getRequestURI())
+                        ? "유효하지 않은 관심사 정보입니다." : "/api/v1/users/me/consents".equals(request.getRequestURI())
                         ? "잘못된 요청입니다." : "요청 JSON 형식이 올바르지 않습니다.", request.getRequestURI()));
     }
 

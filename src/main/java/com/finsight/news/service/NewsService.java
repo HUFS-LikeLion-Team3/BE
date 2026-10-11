@@ -51,7 +51,15 @@ public class NewsService {
                     } else {
                         scores.add("(case when n.category = :" + key + " then 1 else 0 end)");
                     }
-                    parameters.put(key, interest.getInterestKey());
+                    String interestKey = interest.getInterestKey();
+                    if (interest.getInterestType() == UserInterest.InterestType.market) {
+                        interestKey = switch (interestKey) {
+                            case "korea" -> "korea_equity";
+                            case "us" -> "us_equity";
+                            default -> interestKey;
+                        };
+                    }
+                    parameters.put(key, interestKey);
                 }
             }
         }

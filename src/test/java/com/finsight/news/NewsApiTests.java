@@ -20,6 +20,7 @@ import java.time.*;
 import java.util.*;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -133,6 +134,63 @@ class NewsApiTests {
         interests.saveAndFlush(new UserInterest(users.getReferenceById(userId), UserInterest.InterestType.market, "korea_equity"));
         mvc.perform(get("/api/v1/news").header("Authorization", token).param("sort", "recommended").param("contentType", "live"))
                 .andExpect(jsonPath("$.content[0].id").value(newest.getId().toString()));
+    }
+
+    @Test void interestReplacementIsRepeatableIsolatedAndUpdatesRecommendations() throws Exception {
+        var user = users.findById(userId).orElseThrow();
+        user.completeOnboarding();
+        Instant completed = user.getOnboardingCompletedAt();
+        User other = users.saveAndFlush(new User("kakao", UUID.randomUUID().toString(), "other"));
+        interests.saveAndFlush(new UserInterest(other, UserInterest.InterestType.market, "korea"));
+        Instant at = Instant.parse("2026-10-01T09:00:00Z");
+        News newest = news("newest", "published", "live", at.plusSeconds(100), Set.of("KR"), Set.of());
+        News match = news("match", "published", "live", at, Set.of("US"), Set.of());
+        String body = "{\"interests\":[{\"interestType\":\"market\",\"interestKey\":\"us\"},"
+                + "{\"interestType\":\"topic\",\"interestKey\":\"semiconductor\"}]}";
+        for (int i = 0; i < 2; i++) {
+            mvc.perform(put("/api/v1/users/me/interests").header("Authorization", token)
+                    .contentType("application/json").content(body))
+                    .andExpect(status().isOk()).andExpect(content().json(body))
+                    .andExpect(jsonPath("$.interests[0].id").doesNotExist());
+            assertEquals(2, interests.findByUserId(userId).size());
+        }
+        mvc.perform(get("/api/v1/users/me/interests").header("Authorization", token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.interests.length()").value(2));
+        mvc.perform(get("/api/v1/news").header("Authorization", token).param("sort", "recommended"))
+                .andExpect(jsonPath("$.content[0].id").value(match.getId().toString()));
+        mvc.perform(put("/api/v1/users/me/interests").header("Authorization", token)
+                .contentType("application/json").content("{\"interests\":[]}"))
+                .andExpect(status().isOk()).andExpect(content().json("{\"interests\":[]}"));
+        assertTrue(interests.findByUserId(userId).isEmpty());
+        assertEquals(1, interests.findByUserId(other.getId()).size());
+        assertEquals(completed, users.findById(userId).orElseThrow().getOnboardingCompletedAt());
+        mvc.perform(get("/api/v1/news").header("Authorization", token).param("sort", "recommended"))
+                .andExpect(jsonPath("$.content[0].id").value(newest.getId().toString()));
+    }
+
+    @Test void invalidInterestRequestsPreserveExistingRowsAndRequireAuthentication() throws Exception {
+        var stored = interests.saveAndFlush(new UserInterest(users.getReferenceById(userId),
+                UserInterest.InterestType.market, "korea"));
+        for (String body : List.of("{}", "null", "{", "{\"interests\":null}",
+                "{\"interests\":[null]}", "{\"interests\":[{}]}",
+                "{\"interests\":[{\"interestType\":\"invalid\",\"interestKey\":\"korea\"}]}",
+                "{\"interests\":[{\"interestType\":\"market\",\"interestKey\":\"both\"}]}",
+                "{\"interests\":[{\"interestType\":\"topic\",\"interestKey\":\"all\"}]}",
+                "{\"interests\":[{\"interestType\":\"topic\",\"interestKey\":\"unknown\"}]}",
+                "{\"interests\":[{\"interestType\":\"market\",\"interestKey\":\"us\"},"
+                        + "{\"interestType\":\"market\",\"interestKey\":\"us\"}]}")) {
+            mvc.perform(put("/api/v1/users/me/interests").header("Authorization", token)
+                    .contentType("application/json").content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("유효하지 않은 관심사 정보입니다."));
+            assertEquals(List.of(stored.getId()), interests.findByUserId(userId).stream().map(UserInterest::getId).toList());
+        }
+        for (String authorization : List.of("", "Bearer invalid")) {
+            mvc.perform(put("/api/v1/users/me/interests").header("Authorization", authorization)
+                    .contentType("application/json").content("{\"interests\":[]}"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.message").value("로그인이 필요합니다."));
+        }
     }
     @Test void schemaMatchesErdColumnsWithoutInventedTables() {
         Map<String, Set<String>> expected = Map.of(

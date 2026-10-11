@@ -24,6 +24,8 @@ public class NewsController {
     }
     @GetMapping("/news/{newsId}")
     public Detail detail(@PathVariable UUID newsId) { return service.detail(newsId); }
+    @GetMapping("/news/{newsId}/target-candidates")
+    public Candidates targetCandidates(@PathVariable UUID newsId) { return service.targetCandidates(newsId); }
     @GetMapping("/news/{newsId}/facts")
     public Facts facts(@PathVariable UUID newsId) { return service.facts(newsId); }
     @GetMapping("/news/{newsId}/sources")

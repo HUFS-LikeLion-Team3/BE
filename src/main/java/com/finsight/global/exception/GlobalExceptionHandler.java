@@ -37,11 +37,30 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<ErrorResponse> handleMalformedJson(HttpMessageNotReadableException e,
-            HttpServletRequest request) {
-        return ResponseEntity.badRequest().body(new ErrorResponse(OffsetDateTime.now(KOREA_ZONE),
-                400, "Bad Request", "/api/v1/users/me/consents".equals(request.getRequestURI())
-                        ? "잘못된 요청입니다." : "요청 JSON 형식이 올바르지 않습니다.", request.getRequestURI()));
+    public ResponseEntity<ErrorResponse> handleMalformedJson(
+            HttpMessageNotReadableException e,
+            HttpServletRequest request
+    ) {
+        String path = request.getRequestURI();
+
+        boolean isConsentApi = "/api/v1/users/me/consents".equals(path);
+        boolean isReflectionApi = path.matches(
+                "^/api/v1/learning-sessions/[^/]+/reflections$"
+        );
+
+        String message = (isConsentApi || isReflectionApi)
+                ? "잘못된 요청입니다."
+                : "요청 JSON 형식이 올바르지 않습니다.";
+
+        return ResponseEntity.badRequest().body(
+                new ErrorResponse(
+                        OffsetDateTime.now(KOREA_ZONE),
+                        400,
+                        "Bad Request",
+                        message,
+                        path
+                )
+        );
     }
 
     @ExceptionHandler(ApiException.class)
@@ -87,21 +106,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .badRequest()
                 .body(response);
-    }
-
-    @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<ErrorResponse> handleUnreadableRequest(
-            HttpMessageNotReadableException e,
-            HttpServletRequest request
-    ) {
-        ErrorResponse response = new ErrorResponse(
-                OffsetDateTime.now(KOREA_ZONE),
-                HttpStatus.BAD_REQUEST.value(),
-                HttpStatus.BAD_REQUEST.getReasonPhrase(),
-                "잘못된 요청입니다.",
-                request.getRequestURI()
-        );
-        return ResponseEntity.badRequest().body(response);
     }
 
     @ExceptionHandler(Exception.class)

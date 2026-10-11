@@ -116,7 +116,12 @@ public class ReflectionService {
         }
 
         ReflectionSubmission submission = submissionRepository.save(
-                ReflectionSubmission.create(session.getId(), request.clientRequestId(), hash));
+                ReflectionSubmission.create(
+                        session.getId(),
+                        request.clientRequestId(),
+                        hash,
+                        request.reflectionType()
+                ));
         ReflectionNote note = noteRepository.save(ReflectionNote.create(
                 session.getId(), target.getId(),
                 request.reflectionType(),
@@ -162,7 +167,12 @@ public class ReflectionService {
 
         OffsetDateTime completedAt = OffsetDateTime.now();
         ReflectionSubmission submission = submissionRepository.save(
-                ReflectionSubmission.create(session.getId(), request.clientRequestId(), hash));
+                ReflectionSubmission.create(
+                        session.getId(),
+                        request.clientRequestId(),
+                        hash,
+                        request.reflectionType()
+                ));
         List<ReflectionNote> notes = new ArrayList<>();
         for (ReflectionCreateRequest.Answer answer : validAnswers) {
             notes.add(ReflectionNote.create(session.getId(), null,

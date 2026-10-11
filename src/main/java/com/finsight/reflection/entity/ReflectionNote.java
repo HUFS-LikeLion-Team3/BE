@@ -40,7 +40,7 @@ public class ReflectionNote {
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 
-    @Column(name = "submission_id", nullable = false)
+    @Column(name = "reflection_submission_id", nullable = false)
     private UUID submissionId;
 
     @Column(name = "client_request_id", nullable = false)

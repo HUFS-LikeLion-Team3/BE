@@ -28,7 +28,7 @@
 
 `referenceMarket`는 제출 전 참고값이며 세션 T0 및 `session_target_baselines`를 생성하거나 변경하지 않는다.
 현재 ERD에는 공통 정규 종가 저장소가 없고 데이터 제공처가 연결되지 않아 기본 상태는
-`unavailable`, 사유는 `시장 데이터 제공처가 연결되지 않았습니다.`이다.
+`unavailable`, unavailableReason은 null이다.
 제공처 이름·URL과 시장값은 임의로 채우지 않는다.
 
 실제 연동 시 `ReferenceMarketProvider` 빈을 구현한다. 제공처는 대상의 calendarCode/timezone/dataSymbol을

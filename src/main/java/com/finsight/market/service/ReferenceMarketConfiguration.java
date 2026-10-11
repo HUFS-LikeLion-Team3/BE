@@ -11,6 +11,6 @@ public class ReferenceMarketConfiguration {
     @ConditionalOnMissingBean(ReferenceMarketProvider.class)
     ReferenceMarketProvider unavailableReferenceMarketProvider() {
         return target -> new Snapshot(Status.unavailable, null, null, null, null,
-                null, null, "시장 데이터 제공처가 연결되지 않았습니다.");
+                null, null, null);
     }
 }

@@ -107,7 +107,7 @@ class MarketTargetApiTests {
                 .andExpect(jsonPath("$.referenceMarket.value").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.referenceMarket.asOfAt").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.referenceMarket.unit").value("%"))
-                .andExpect(jsonPath("$.referenceMarket.unavailableReason").isString());
+                .andExpect(jsonPath("$.referenceMarket.unavailableReason").value(org.hamcrest.Matchers.nullValue()));
         org.junit.jupiter.api.Assertions.assertEquals(before,
                 em.createQuery("select count(b) from SessionTargetBaseline b", Long.class).getSingleResult());
     }

@@ -23,8 +23,18 @@ import org.springframework.data.domain.Sort;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.time.*;
-import java.util.*;
+import java.time.DayOfWeek;
+import java.time.Duration;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 @Slf4j
 @Component
@@ -47,7 +57,7 @@ public class DailyOutcomeScheduler {
                     LearningSession.LearningStatus.observing
             );
 
-    private static final int RETRY_WEEKDAYS = 10;
+    private static final int RETRY_PUBLISHED_SESSIONS = 10;
 
     private final LearningSessionRepository sessionRepository;
     private final SessionTargetRepository targetRepository;
@@ -148,6 +158,7 @@ public class DailyOutcomeScheduler {
                         selected.getId(),
                         e.status()
                 );
+
             } catch (RuntimeException e) {
                 log.warn(
                         "Daily market target failed: target={}, type={}",
@@ -178,7 +189,7 @@ public class DailyOutcomeScheduler {
                     sessionId,
                     targetId,
                     expected,
-                    addWeekdays(expected, RETRY_WEEKDAYS)
+                    addWeekdays(expected, RETRY_PUBLISHED_SESSIONS)
             );
 
             baseline = baselineRepository
@@ -225,12 +236,16 @@ public class DailyOutcomeScheduler {
             Map<Integer, LocalDate> deadlines = new HashMap<>();
 
             for (int horizon : HORIZONS) {
-                LocalDate date = addWeekdays(start, horizon);
+                LocalDate estimated = addWeekdays(start, horizon);
 
-                expected.put(horizon, date);
+                expected.put(horizon, estimated);
+
                 deadlines.put(
                         horizon,
-                        addWeekdays(date, RETRY_WEEKDAYS)
+                        addWeekdays(
+                                estimated,
+                                RETRY_PUBLISHED_SESSIONS
+                        )
                 );
             }
 
@@ -261,11 +276,8 @@ public class DailyOutcomeScheduler {
             SessionTargetBaseline baseline
     ) {
         LocalDate expected = baseline.getExpectedBaselineDate();
-        LocalDate deadline = baseline.getBaselineDeadlineDate();
 
-        if (expected == null
-                || deadline == null
-                || deadline.isBefore(expected)) {
+        if (expected == null) {
             return;
         }
 
@@ -276,42 +288,43 @@ public class DailyOutcomeScheduler {
             return;
         }
 
-        for (LocalDate date = expected;
-             !date.isAfter(today) && !date.isAfter(deadline);
-             date = date.plusDays(1)) {
+        List<LocalDate> firstPublished =
+                publishedDates(market, expected, today, 1);
 
-            if (!isFinalized(market, date)) {
-                return;
-            }
+        if (firstPublished.isEmpty()) {
+            return;
+        }
 
-            var result = marketDataService.regularCloseOn(
-                    market,
-                    date
-            );
+        LocalDate first = firstPublished.getFirst();
 
-            if (result.status() == MarketDataProvider.Status.ready) {
+        MarketDataProvider.Status status =
                 collectionService.collectBaseline(
                         sessionId,
                         targetId,
-                        date
+                        first
                 );
-                return;
-            }
 
-            if (result.status() == MarketDataProvider.Status.pending
-                    || !missing(result)) {
-                if (!today.isAfter(deadline)) {
-                    return;
-                }
-                break;
-            }
+        if (status == MarketDataProvider.Status.ready) {
+            log.info(
+                    "Daily baseline ready: target={}, date={}",
+                    targetId,
+                    first
+            );
+            return;
         }
 
-        if (today.isAfter(deadline)) {
+        List<LocalDate> later = publishedDates(
+                market,
+                first.plusDays(1),
+                today,
+                RETRY_PUBLISHED_SESSIONS
+        );
+
+        if (later.size() >= RETRY_PUBLISHED_SESSIONS) {
             collectionService.expireBaseline(
                     sessionId,
                     targetId,
-                    "BASELINE_DEADLINE_EXCEEDED"
+                    "BASELINE_10_PUBLISHED_SESSIONS_EXCEEDED"
             );
         }
     }
@@ -345,80 +358,49 @@ public class DailyOutcomeScheduler {
         LocalDate today =
                 LocalDate.now(ZoneId.of(market.getTimezone()));
 
-        LocalDate maxDeadline = pending.stream()
-                .map(MarketObservation::getObservationDeadlineDate)
-                .filter(Objects::nonNull)
-                .max(LocalDate::compareTo)
-                .orElse(null);
-
-        if (maxDeadline == null) {
-            return;
-        }
-
-        LocalDate end = today.isBefore(maxDeadline)
-                ? today
-                : maxDeadline;
-
         LocalDate start =
                 baseline.getBaselineSessionDate().plusDays(1);
 
-        List<LocalDate> published = new ArrayList<>();
-        boolean unresolved = false;
-
-        for (LocalDate date = start;
-             !date.isAfter(end);
-             date = date.plusDays(1)) {
-
-            if (!isFinalized(market, date)) {
-                unresolved = true;
-                break;
-            }
-
-            var result = marketDataService.regularCloseOn(
-                    market,
-                    date
-            );
-
-            if (result.status() == MarketDataProvider.Status.ready) {
-                published.add(date);
-
-                if (published.size() >= 20) {
-                    break;
-                }
-            } else if (result.status()
-                    == MarketDataProvider.Status.pending
-                    || !missing(result)) {
-
-                unresolved = true;
-                break;
-            }
+        if (today.isBefore(start)) {
+            return;
         }
+
+        int lastHorizon = pending.stream()
+                .mapToInt(MarketObservation::getHorizon)
+                .max()
+                .orElse(20);
+
+        List<LocalDate> published =
+                publishedDates(market, start, today, lastHorizon);
 
         for (MarketObservation observation : pending) {
             LocalDate expected =
                     observation.getExpectedObservationDate();
 
-            LocalDate deadline =
+            LocalDate estimatedDeadline =
                     observation.getObservationDeadlineDate();
 
             if (expected == null
-                    || deadline == null
-                    || deadline.isBefore(expected)) {
+                    || estimatedDeadline == null
+                    || estimatedDeadline.isBefore(expected)) {
                 continue;
             }
 
             int horizon = observation.getHorizon();
 
-            if (published.size() >= horizon) {
-                LocalDate actual = published.get(horizon - 1);
+            if (published.size() < horizon) {
+                continue;
+            }
 
-                if (!actual.isAfter(deadline)) {
-                    int delay = Math.max(
-                            0,
-                            weekdaysBetween(expected, actual)
-                    );
+            LocalDate actual = published.get(horizon - 1);
 
-                    var status = collectionService.collectObservation(
+            int delay = Math.max(
+                    0,
+                    weekdaysBetween(expected, actual)
+            );
+
+            MarketDataProvider.Status status =
+                    collectionService.collectObservation(
                             sessionId,
                             targetId,
                             horizon,
@@ -426,29 +408,74 @@ public class DailyOutcomeScheduler {
                             delay
                     );
 
-                    if (status == MarketDataProvider.Status.ready) {
-                        log.info(
-                                "Daily observation ready: target={}, horizon={}, date={}",
-                                targetId,
-                                horizon,
-                                actual
-                        );
-                    }
-
-                    continue;
-                }
+            if (status == MarketDataProvider.Status.ready) {
+                log.info(
+                        "Daily observation ready: target={}, horizon={}, date={}",
+                        targetId,
+                        horizon,
+                        actual
+                );
+                continue;
             }
 
-            if (today.isAfter(deadline)) {
+            List<LocalDate> later = publishedDates(
+                    market,
+                    actual.plusDays(1),
+                    today,
+                    RETRY_PUBLISHED_SESSIONS
+            );
+
+            if (later.size() >= RETRY_PUBLISHED_SESSIONS) {
                 collectionService.expireObservation(
                         sessionId,
                         targetId,
                         horizon,
                         MarketObservation.OutcomeExceptionStatus.data_missing,
-                        "OBSERVATION_DEADLINE_EXCEEDED"
+                        "OBSERVATION_10_PUBLISHED_SESSIONS_EXCEEDED"
                 );
             }
         }
+    }
+
+    private List<LocalDate> publishedDates(
+            MarketTarget market,
+            LocalDate start,
+            LocalDate today,
+            int maxResults
+    ) {
+        List<LocalDate> published = new ArrayList<>();
+
+        for (LocalDate date = start;
+             !date.isAfter(today) && published.size() < maxResults;
+             date = date.plusDays(1)) {
+
+            if (!isFinalized(market, date)) {
+                break;
+            }
+
+            MarketDataService.Result<MarketDataService.Close> result =
+                    marketDataService.regularCloseOn(market, date);
+
+            if (result.status() == MarketDataProvider.Status.ready) {
+                MarketDataService.Close close = result.data();
+
+                if (close == null
+                        || !date.equals(close.sessionDate())
+                        || close.value() == null
+                        || close.asOfAt() == null) {
+                    throw new IllegalStateException(
+                            "Invalid daily published value"
+                    );
+                }
+
+                published.add(date);
+
+            } else if (!missing(result)) {
+                break;
+            }
+        }
+
+        return published;
     }
 
     private boolean isFinalized(
@@ -464,8 +491,7 @@ public class DailyOutcomeScheduler {
     private boolean missing(
             MarketDataService.Result<MarketDataService.Close> result
     ) {
-        return result.status()
-                == MarketDataProvider.Status.unavailable
+        return result.status() == MarketDataProvider.Status.unavailable
                 && result.diagnostic() != null
                 && result.diagnostic()
                 .contains("missing_requested_observation");
@@ -544,4 +570,3 @@ public class DailyOutcomeScheduler {
                 && date.getDayOfWeek() != DayOfWeek.SUNDAY;
     }
 }
-

@@ -155,6 +155,96 @@ class DailyOutcomeSchedulerTest {
                 any(LocalDate.class), anyInt());
     }
 
+    @Test
+    void expiresBaselineAfterTenPublishedSessions() {
+        UUID sessionId = UUID.randomUUID();
+        UUID targetId = UUID.randomUUID();
+        UUID marketId = UUID.randomUUID();
+
+        ZoneId zone = ZoneId.of("America/New_York");
+        LocalDate start = LocalDate.now(zone).minusDays(45);
+
+        LearningSessionRepository sessions = mock(LearningSessionRepository.class);
+        SessionTargetRepository targets = mock(SessionTargetRepository.class);
+        MarketTargetRepository markets = mock(MarketTargetRepository.class);
+        SessionTargetBaselineRepository baselines = mock(SessionTargetBaselineRepository.class);
+        MarketObservationRepository observations = mock(MarketObservationRepository.class);
+        MarketDataService data = mock(MarketDataService.class);
+        OutcomeCollectionService collector = mock(OutcomeCollectionService.class);
+
+        LearningSession session = mock(LearningSession.class);
+        SessionTarget selected = mock(SessionTarget.class);
+        MarketTarget market = mock(MarketTarget.class);
+        SessionTargetBaseline baseline = mock(SessionTargetBaseline.class);
+
+        when(session.getId()).thenReturn(sessionId);
+        when(session.getSubmittedAt()).thenReturn(
+                OffsetDateTime.now().minusDays(50));
+        when(session.getSessionType()).thenReturn(LearningSession.SessionType.live);
+        when(session.getStatus()).thenReturn(
+                LearningSession.LearningStatus.baseline_pending);
+
+        when(sessions.findAllByStatusIn(anyList(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(session)));
+        when(sessions.findById(sessionId)).thenReturn(Optional.of(session));
+
+        when(selected.isSelected()).thenReturn(true);
+        when(selected.getId()).thenReturn(targetId);
+        when(selected.getMarketTargetId()).thenReturn(marketId);
+        when(targets.findAllByLearningSessionId(sessionId))
+                .thenReturn(List.of(selected));
+
+        when(markets.findById(marketId)).thenReturn(Optional.of(market));
+        when(market.getCalendarCode()).thenReturn("USTY");
+        when(market.getTimezone()).thenReturn(zone.getId());
+
+        when(baselines.findBySessionTargetId(targetId))
+                .thenReturn(Optional.of(baseline));
+        when(baseline.getStatus()).thenReturn(
+                SessionTargetBaseline.BaselineStatus.pending);
+        when(baseline.getExpectedBaselineDate()).thenReturn(start);
+
+        when(data.regularCloseOn(eq(market), any(LocalDate.class)))
+                .thenAnswer(invocation -> {
+                    LocalDate date = invocation.getArgument(1);
+
+                    if (!weekday(date)) {
+                        return new MarketDataService.Result<>(
+                                MarketDataProvider.Status.unavailable,
+                                null,
+                                "missing_requested_observation"
+                        );
+                    }
+
+                    return new MarketDataService.Result<>(
+                            MarketDataProvider.Status.ready,
+                            new MarketDataService.Close(
+                                    date,
+                                    date.atTime(15, 30).atZone(zone)
+                                            .toOffsetDateTime(),
+                                    new BigDecimal("4.25"),
+                                    "%",
+                                    "Test Treasury",
+                                    "https://example.com"
+                            )
+                    );
+                });
+
+        when(collector.collectBaseline(
+                eq(sessionId), eq(targetId), any(LocalDate.class)))
+                .thenReturn(MarketDataProvider.Status.pending);
+
+        new DailyOutcomeScheduler(
+                sessions, targets, markets, baselines,
+                observations, data, collector
+        ).run();
+
+        verify(collector).expireBaseline(
+                sessionId,
+                targetId,
+                "BASELINE_10_PUBLISHED_SESSIONS_EXCEEDED"
+        );
+    }
     private static LocalDate addWeekdays(LocalDate date, int count) {
         while (count > 0) {
             date = date.plusDays(1);

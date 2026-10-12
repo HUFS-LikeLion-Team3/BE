@@ -16,14 +16,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * Reconcile a submitted session from persisted market data, never from FE time calculations.
- *
- * Market-data ingestion should call reconcile(sessionId) inside its write transaction after
- * saving the baseline/observations, having acquired the session lock first. The current
- * outcome module only implements reads, so this service deliberately does not fabricate
- * market observations, run external collection, or change statuses on a GET request.
- */
+
 @Service
 @RequiredArgsConstructor
 public class LearningSessionStatusService {

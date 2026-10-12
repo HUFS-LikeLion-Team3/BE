@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -101,6 +102,174 @@ public class MarketObservation {
     @PreUpdate
     protected void onUpdate() {
         updatedAt = OffsetDateTime.now();
+    }
+
+    // T1/T5/T20 최초 관측 행 생성
+    public static MarketObservation createPending(
+            UUID sessionTargetId,
+            UUID baselineId,
+            int horizon,
+            OffsetDateTime referenceAt,
+            LocalDate expectedDate,
+            LocalDate deadlineDate,
+            String unit
+    ) {
+        if (sessionTargetId == null || baselineId == null) {
+            throw new IllegalArgumentException(
+                    "Target and baseline IDs required"
+            );
+        }
+
+        if (horizon != 1 && horizon != 5 && horizon != 20) {
+            throw new IllegalArgumentException(
+                    "Invalid observation horizon"
+            );
+        }
+
+        if (referenceAt == null
+                || unit == null
+                || unit.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Invalid observation initialization"
+            );
+        }
+
+        if ((expectedDate == null) != (deadlineDate == null)) {
+            throw new IllegalArgumentException(
+                    "Observation dates must both be null or non-null"
+            );
+        }
+
+        if (expectedDate != null
+                && deadlineDate.isBefore(expectedDate)) {
+            throw new IllegalArgumentException(
+                    "Invalid observation deadline"
+            );
+        }
+
+        MarketObservation observation = new MarketObservation();
+
+        observation.sessionTargetId = sessionTargetId;
+        observation.baselineId = baselineId;
+        observation.horizon = horizon;
+        observation.referenceAt = referenceAt;
+        observation.expectedObservationDate = expectedDate;
+        observation.observationDeadlineDate = deadlineDate;
+        observation.status = OutcomeStatus.pending;
+        observation.exceptionStatus = OutcomeExceptionStatus.none;
+        observation.observationDelaySessions = 0;
+        observation.usableForAiEvidence = false;
+        observation.unit = unit;
+
+        return observation;
+    }
+
+    // 실제 시장 관측 결과 저장
+    public void markReady(
+            LocalDate sessionDate,
+            OffsetDateTime asOfAt,
+            BigDecimal value,
+            BigDecimal baselineValue,
+            int delaySessions,
+            String sourceName,
+            String sourceUrl
+    ) {
+        if (status != OutcomeStatus.pending) {
+            throw new IllegalStateException(
+                    "Observation already finalized"
+            );
+        }
+
+        if (sessionDate == null
+                || asOfAt == null
+                || value == null
+                || baselineValue == null
+                || delaySessions < 0
+                || sourceName == null
+                || sourceName.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Invalid observation result"
+            );
+        }
+
+        if (expectedObservationDate == null
+                || observationDeadlineDate == null
+                || sessionDate.isBefore(expectedObservationDate)
+                || sessionDate.isAfter(observationDeadlineDate)) {
+            throw new IllegalArgumentException(
+                    "Observation outside allowed date range"
+            );
+        }
+
+        BigDecimal calculatedChange =
+                value.subtract(baselineValue);
+
+        BigDecimal calculatedPercent = null;
+
+        if (baselineValue.signum() != 0) {
+            calculatedPercent = calculatedChange
+                    .multiply(BigDecimal.valueOf(100))
+                    .divide(
+                            baselineValue,
+                            6,
+                            RoundingMode.HALF_UP
+                    );
+        }
+
+        this.status = OutcomeStatus.ready;
+        this.exceptionStatus = OutcomeExceptionStatus.none;
+
+        this.observationSessionDate = sessionDate;
+        this.observedAt = asOfAt;
+        this.observedValue = value;
+        this.observationDelaySessions = delaySessions;
+
+        this.changeValue = calculatedChange;
+        this.changePercent = calculatedPercent;
+
+        this.usableForAiEvidence = true;
+
+        this.dataSourceName = sourceName;
+        this.dataSourceUrl = sourceUrl;
+        this.unavailableReason = null;
+    }
+
+    // 관측 결과를 확보하지 못한 경우
+    public void markUnavailable(
+            OutcomeExceptionStatus exceptionStatus,
+            String reason
+    ) {
+        if (status != OutcomeStatus.pending) {
+            throw new IllegalStateException(
+                    "Observation already finalized"
+            );
+        }
+
+        if (exceptionStatus == null
+                || reason == null
+                || reason.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Unavailable exception status and reason required"
+            );
+        }
+
+        this.status = OutcomeStatus.unavailable;
+        this.exceptionStatus = exceptionStatus;
+
+        this.observationSessionDate = null;
+        this.observedAt = null;
+        this.observedValue = null;
+
+        this.observationDelaySessions = 0;
+
+        this.changeValue = null;
+        this.changePercent = null;
+
+        this.usableForAiEvidence = false;
+
+        this.dataSourceName = null;
+        this.dataSourceUrl = null;
+        this.unavailableReason = reason;
     }
 
     public enum OutcomeStatus {

@@ -1,23 +1,28 @@
 package com.finsight.learning.repository;
 
 import com.finsight.learning.entity.LearningSession;
+
+import jakarta.persistence.LockModeType;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import jakarta.persistence.LockModeType;
 
+import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface LearningSessionRepository extends JpaRepository<LearningSession, UUID> {
+public interface LearningSessionRepository
+        extends JpaRepository<LearningSession, UUID> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT s FROM LearningSession s WHERE s.id = :id")
-    Optional<LearningSession> findByIdForUpdate(@Param("id") UUID id);
-
+    Optional<LearningSession> findByIdForUpdate(
+            @Param("id") UUID id
+    );
 
     Optional<LearningSession> findByUserIdAndNewsId(
             UUID userId,
@@ -37,6 +42,12 @@ public interface LearningSessionRepository extends JpaRepository<LearningSession
             @Param("newsId") UUID newsId,
             @Param("status") LearningSession.LearningStatus status,
             @Param("sessionType") LearningSession.SessionType sessionType,
+            Pageable pageable
+    );
+
+    // 시장 결과 수집이 필요한 세션 조회
+    Page<LearningSession> findAllByStatusIn(
+            Collection<LearningSession.LearningStatus> statuses,
             Pageable pageable
     );
 }

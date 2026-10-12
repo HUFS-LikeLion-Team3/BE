@@ -300,7 +300,10 @@ public class DailyOutcomeScheduler {
 
             if (result.status() == MarketDataProvider.Status.pending
                     || !missing(result)) {
-                return;
+                if (!today.isAfter(deadline)) {
+                    return;
+                }
+                break;
             }
         }
 
@@ -436,7 +439,7 @@ public class DailyOutcomeScheduler {
                 }
             }
 
-            if (!unresolved && today.isAfter(deadline)) {
+            if (today.isAfter(deadline)) {
                 collectionService.expireObservation(
                         sessionId,
                         targetId,
@@ -541,3 +544,4 @@ public class DailyOutcomeScheduler {
                 && date.getDayOfWeek() != DayOfWeek.SUNDAY;
     }
 }
+

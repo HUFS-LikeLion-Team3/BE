@@ -74,6 +74,93 @@ public class SessionTargetBaseline {
         updatedAt = OffsetDateTime.now();
     }
 
+    // T0 최초 수집 대상 생성
+    public static SessionTargetBaseline createPending(
+            UUID sessionTargetId,
+            LocalDate expectedDate,
+            LocalDate deadlineDate,
+            String unit
+    ) {
+        if (sessionTargetId == null
+                || expectedDate == null
+                || deadlineDate == null
+                || deadlineDate.isBefore(expectedDate)
+                || unit == null
+                || unit.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Invalid baseline initialization"
+            );
+        }
+
+        SessionTargetBaseline baseline = new SessionTargetBaseline();
+
+        baseline.sessionTargetId = sessionTargetId;
+        baseline.status = BaselineStatus.pending;
+        baseline.expectedBaselineDate = expectedDate;
+        baseline.baselineDeadlineDate = deadlineDate;
+        baseline.unit = unit;
+
+        return baseline;
+    }
+
+    // 확정된 T0 시장 데이터 저장
+    public void markReady(
+            LocalDate sessionDate,
+            OffsetDateTime asOfAt,
+            BigDecimal value,
+            String sourceName,
+            String sourceUrl
+    ) {
+        if (status != BaselineStatus.pending) {
+            throw new IllegalStateException(
+                    "Baseline already finalized"
+            );
+        }
+
+        if (sessionDate == null
+                || sessionDate.isBefore(expectedBaselineDate)
+                || sessionDate.isAfter(baselineDeadlineDate)
+                || asOfAt == null
+                || value == null
+                || sourceName == null
+                || sourceName.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Invalid baseline result"
+            );
+        }
+
+        this.status = BaselineStatus.ready;
+        this.baselineSessionDate = sessionDate;
+        this.baselineAt = asOfAt;
+        this.baselineValue = value;
+        this.dataSourceName = sourceName;
+        this.dataSourceUrl = sourceUrl;
+        this.unavailableReason = null;
+    }
+
+    // 수집 기한 종료 등으로 T0 확정 불가
+    public void markUnavailable(String reason) {
+        if (status != BaselineStatus.pending) {
+            throw new IllegalStateException(
+                    "Baseline already finalized"
+            );
+        }
+
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Unavailable reason required"
+            );
+        }
+
+        this.status = BaselineStatus.unavailable;
+        this.baselineSessionDate = null;
+        this.baselineAt = null;
+        this.baselineValue = null;
+        this.dataSourceName = null;
+        this.dataSourceUrl = null;
+        this.unavailableReason = reason;
+    }
+
     public enum BaselineStatus {
         pending,
         ready,

@@ -1,6 +1,12 @@
 package com.finsight.outcome.entity;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -51,4 +57,36 @@ public class OutcomeSeriesPoint {
 
     @Column(name = "data_source_url")
     private String dataSourceUrl;
+
+    public static OutcomeSeriesPoint create(
+            UUID sessionTargetId,
+            LocalDate tradingDate,
+            BigDecimal closeValue,
+            String unit,
+            String dataSourceName,
+            String dataSourceUrl
+    ) {
+        if (sessionTargetId == null
+                || tradingDate == null
+                || closeValue == null
+                || unit == null
+                || unit.isBlank()
+                || dataSourceName == null
+                || dataSourceName.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Invalid outcome series point"
+            );
+        }
+
+        OutcomeSeriesPoint point = new OutcomeSeriesPoint();
+
+        point.sessionTargetId = sessionTargetId;
+        point.tradingDate = tradingDate;
+        point.closeValue = closeValue;
+        point.unit = unit;
+        point.dataSourceName = dataSourceName;
+        point.dataSourceUrl = dataSourceUrl;
+
+        return point;
+    }
 }

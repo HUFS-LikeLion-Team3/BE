@@ -15,7 +15,7 @@ class LiveMarketsTests {
     @Test void verifiesConfiguredMarketsWithActualProviders() throws Exception {
         var twelve = new TwelveDataClient(System.getenv("TWELVE_DATA_API_KEY"), "https://api.twelvedata.com", "official");
         var treasury = new TreasuryYieldClient("https://home.treasury.gov");
-        var service = new MarketDataService(twelve, List.of(twelve, treasury), Duration.ofMinutes(15), 14);
+        var service = new MarketDataService(twelve, List.of(twelve, treasury, new EiaWtiClient("https://www.eia.gov")), Duration.ofMinutes(15), 14);
         String selected = System.getenv("FINSIGHT_LIVE_TARGETS");
         var codes = selected == null || selected.isBlank() ? Set.of("KOSPI", "US10Y", "USDKRW", "GOLD", "WTI")
                 : Set.of(selected.split(","));

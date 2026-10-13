@@ -54,7 +54,7 @@ public class TwelveDataClient implements MarketDataProvider, DailyObservationPro
     @Override public String sourceUrl() { return "https://twelvedata.com"; }
 
     @Override public boolean supports(MarketTarget target) {
-        return Set.of("TDFX", "TDGD", "TDWT").contains(target.getCalendarCode());
+        return Set.of("TDFX", "TDGD").contains(target.getCalendarCode());
     }
 
     @Override public List<Observation> observations(MarketTarget target, LocalDate through, int days) {

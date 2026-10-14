@@ -67,6 +67,57 @@ class NewsApiTests {
         em.flush();
         return n;
     }
+    @Test void marketFiltersBeforePaginationAndIncludesSharedNewsWithoutDuplicates() throws Exception {
+        Instant at = Instant.parse("2026-10-01T09:00:00Z");
+        news("unclassified", "published", "live", at.plusSeconds(40), Set.of(), Set.of());
+        News korea = news("korea", "published", "live", at.plusSeconds(30), Set.of("KR"), Set.of());
+        News both = news("both", "published", "live", at.plusSeconds(20), Set.of("KR", "US"), Set.of());
+        News us = news("us", "published", "live", at.plusSeconds(10), Set.of("US"), Set.of());
+        news("hidden", "draft", "live", at.plusSeconds(50), Set.of("US"), Set.of());
+        News replay = news("replay", "published", "replay", at.plusSeconds(60), Set.of("US"), Set.of());
+        // A second US candidate must not duplicate the news or distort hasNext.
+        MarketTarget extra = em.createQuery("select c.target from NewsTargetCandidate c where c.news = :news", MarketTarget.class)
+                .setParameter("news", us).getSingleResult();
+        em.persist(new NewsTargetCandidate(both, extra, 3));
+        em.flush();
+        for (String market : List.of("korea", "us")) {
+            mvc.perform(get("/api/v1/news").header("Authorization", token).param("market", market))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(2))
+                    .andExpect(jsonPath("$.content[0].id").value((market.equals("korea") ? korea : both).getId().toString()))
+                    .andExpect(jsonPath("$.content[1].id").value((market.equals("korea") ? both : us).getId().toString()))
+                    .andExpect(jsonPath("$.hasNext").value(false));
+        }
+        interests.saveAndFlush(new UserInterest(users.getReferenceById(userId), UserInterest.InterestType.market, "korea"));
+        for (String sort : List.of("latest", "recommended")) {
+            for (int page = 0; page < 2; page++) {
+                mvc.perform(get("/api/v1/news").header("Authorization", token).param("market", "us")
+                        .param("sort", sort).param("size", "1").param("page", String.valueOf(page)))
+                        .andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(1))
+                        .andExpect(jsonPath("$.content[0].id").value((page == 0 ? both : us).getId().toString()))
+                        .andExpect(jsonPath("$.hasNext").value(page == 0));
+            }
+        }
+        for (String market : List.of("all", "omitted")) {
+            var request = get("/api/v1/news").header("Authorization", token);
+            if (!market.equals("omitted")) request.param("market", market);
+            mvc.perform(request).andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(4));
+        }
+        mvc.perform(get("/api/v1/news").header("Authorization", token).param("market", "us")
+                .param("contentType", "replay").param("category", "rate").param("replayStatus", "not_eligible"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(replay.getId().toString()));
+        mvc.perform(get("/api/v1/news").header("Authorization", token).param("market", "us").param("category", "unknown"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content").isEmpty());
+    }
+
+    @Test void invalidMarketsReturnBadRequest() throws Exception {
+        for (String market : List.of("", " ", "US", "KR", "korea_equity", "unknown")) {
+            mvc.perform(get("/api/v1/news").header("Authorization", token).param("market", market))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("유효하지 않은 뉴스 조회 조건입니다."));
+        }
+    }
+
     @Test void recommendationUsesCurrentInterestsBeforePaginationAndKeepsUnmatchedNews() throws Exception {
         Instant at = Instant.parse("2026-10-01T09:00:00Z");
         News newest = news("newest", "published", "live", at.plusSeconds(100), Set.of("KR"), Set.of());
@@ -96,6 +147,9 @@ class NewsApiTests {
             "NEWS", Set.of("ID","CONTENT_TYPE","REPLAY_STATUS","TITLE","CATEGORY","BRIEFING",
                     "PUBLISHED_AT","REFERENCE_AT","CURATED_AT","STATUS","CREATED_AT","UPDATED_AT"),
             "USER_INTERESTS", Set.of("ID","USER_ID","INTEREST_TYPE","INTEREST_KEY","CREATED_AT"),
+            "MARKET_TARGETS", Set.of("ID","CODE","DISPLAY_NAME","MARKET_CATEGORY","TARGET_TYPE",
+                    "DIRECTION_LABELS","UNIT","CALENDAR_CODE","TIMEZONE","DATA_SYMBOL","IS_ACTIVE","CREATED_AT","UPDATED_AT"),
+            "NEWS_TARGET_CANDIDATES", Set.of("NEWS_ID","MARKET_TARGET_ID","RATIONALE","SORT_ORDER"),
             "SOURCE_DOCUMENTS", Set.of("ID","NEWS_ID","SOURCE_TYPE","SELECTION_TIER","PUBLISHER",
                     "TITLE","URL","PUBLISHED_AT","IS_PRIMARY","CONTENT_HASH","CONTENT_STORAGE_URI",
                     "RETRIEVED_AT","CREATED_AT","UPDATED_AT"),
@@ -109,6 +163,32 @@ class NewsApiTests {
                 "USER_INTEREST_MARKETS","USER_INTEREST_TOPICS")) {
             assertFalse(tables.contains(old), old);
         }
+    }
+    @Test void marketCandidateKeysAndRelationshipsMatchErd() {
+        assertEquals(Set.of("NEWS_ID", "MARKET_TARGET_ID"), new HashSet<>(jdbc.queryForList("""
+                select k.column_name from information_schema.key_column_usage k
+                join information_schema.table_constraints t
+                  on k.constraint_schema = t.constraint_schema and k.constraint_name = t.constraint_name
+                where t.table_schema = 'PUBLIC' and t.table_name = 'NEWS_TARGET_CANDIDATES'
+                  and t.constraint_type = 'PRIMARY KEY'
+                """, String.class)));
+        assertEquals(Set.of("NEWS_ID", "SORT_ORDER"), new HashSet<>(jdbc.queryForList("""
+                select k.column_name from information_schema.key_column_usage k
+                join information_schema.table_constraints t
+                  on k.constraint_schema = t.constraint_schema and k.constraint_name = t.constraint_name
+                where t.table_schema = 'PUBLIC' and t.table_name = 'NEWS_TARGET_CANDIDATES'
+                  and t.constraint_type = 'UNIQUE'
+                """, String.class)));
+        assertEquals(Set.of("NEWS_ID:NEWS:ID", "MARKET_TARGET_ID:MARKET_TARGETS:ID"), new HashSet<>(jdbc.queryForList("""
+                select k.column_name || ':' || p.table_name || ':' || p.column_name
+                from information_schema.referential_constraints r
+                join information_schema.key_column_usage k
+                  on k.constraint_schema = r.constraint_schema and k.constraint_name = r.constraint_name
+                join information_schema.key_column_usage p
+                  on p.constraint_schema = r.unique_constraint_schema and p.constraint_name = r.unique_constraint_name
+                  and p.ordinal_position = k.position_in_unique_constraint
+                where k.table_schema = 'PUBLIC' and k.table_name = 'NEWS_TARGET_CANDIDATES'
+                """, String.class)));
     }
     @Test void tiedResultsAndExplicitFiltersAreStable() throws Exception {
         Instant at = Instant.parse("2026-10-01T09:00:00Z");

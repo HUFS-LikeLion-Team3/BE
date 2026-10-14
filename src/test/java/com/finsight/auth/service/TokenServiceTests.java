@@ -29,6 +29,23 @@ class TokenServiceTests {
     }
 
     @Test
+    void configuredIssuerAndTtlAreReflectedInSignedClaims() {
+        var service = new TokenService(TEST_KEY, 125, "finsight-test", CLOCK);
+        UUID userId = UUID.randomUUID();
+        String token = service.issue(userId);
+        var key = new SecretKeySpec(Base64.getDecoder().decode(TEST_KEY), "HmacSHA256");
+        var jwt = NimbusJwtDecoder.withSecretKey(key).build();
+        var timestampValidator = new JwtTimestampValidator(java.time.Duration.ZERO);
+        timestampValidator.setClock(CLOCK);
+        jwt.setJwtValidator(timestampValidator);
+        var claims = jwt.decode(token);
+        assertEquals(userId.toString(), claims.getSubject());
+        assertEquals("finsight-test", claims.getClaimAsString("iss"));
+        assertEquals(NOW, claims.getIssuedAt());
+        assertEquals(NOW.plusSeconds(125), claims.getExpiresAt());
+    }
+
+    @Test
     void expiredTokenIsRejectedAtExactExpiry() {
         var issuer = new TokenService(TEST_KEY, 3600, "finsight", CLOCK);
         String token = issuer.issue(UUID.randomUUID());

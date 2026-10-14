@@ -21,7 +21,9 @@ class SampleNewsTests {
     @Autowired JdbcTemplate jdbc;
     @Autowired DataSource dataSource;
     @Test void sampleDataLoadsAndCanBeLoadedAgain() {
+        jdbc.update("update market_targets set unit='%' where code in ('SAMPLE_US', 'SAMPLE_KR')");
         new ResourceDatabasePopulator(new ClassPathResource("sample-news.sql")).execute(dataSource);
+        assertEquals(2, jdbc.queryForObject("select count(*) from market_targets where code in ('SAMPLE_US', 'SAMPLE_KR') and target_type='index' and unit='point'", Integer.class));
         assertEquals(4, jdbc.queryForObject("select count(*) from news", Integer.class));
         assertEquals(2, jdbc.queryForObject("select count(*) from news where status='published' and content_type='live'", Integer.class));
         assertEquals(2, jdbc.queryForObject("select count(*) from source_documents", Integer.class));

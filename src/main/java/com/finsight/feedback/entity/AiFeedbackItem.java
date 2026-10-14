@@ -8,13 +8,23 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
+import java.util.List;
 import java.util.UUID;
 
 @Entity
-@Table(name = "ai_feedback_items")
+@Table(
+        name = "ai_feedback_items",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_ai_feedback_items_feedback_order",
+                columnNames = {"ai_feedback_id", "sort_order"}
+        )
+)
 @Getter
 @NoArgsConstructor
 public class AiFeedbackItem {
@@ -36,8 +46,30 @@ public class AiFeedbackItem {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "variables_to_check", columnDefinition = "json")
+    private List<String> variablesToCheck;
+
     @Column(name = "sort_order", nullable = false)
     private Integer sortOrder;
+
+    public static AiFeedbackItem create(
+            UUID aiFeedbackId,
+            UUID sessionTargetId,
+            FeedbackItemType itemType,
+            String content,
+            List<String> variablesToCheck,
+            int sortOrder
+    ) {
+        AiFeedbackItem item = new AiFeedbackItem();
+        item.aiFeedbackId = aiFeedbackId;
+        item.sessionTargetId = sessionTargetId;
+        item.itemType = itemType;
+        item.content = content;
+        item.variablesToCheck = variablesToCheck;
+        item.sortOrder = sortOrder;
+        return item;
+    }
 
     public enum FeedbackItemType {
         flow_summary,

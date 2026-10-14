@@ -1,4 +1,6 @@
 -- ERD 기반 API 확인용 가상 데이터. 실제 금융 뉴스가 아닙니다.
+-- 기존 샘플 대상의 단위도 재실행 시 갱신한다.
+UPDATE market_targets SET unit='point', updated_at=CURRENT_TIMESTAMP WHERE (id=X'55555555555545558555555555555555' AND code='SAMPLE_US' OR id=X'66666666666646668666666666666666' AND code='SAMPLE_KR') AND unit='%';
 INSERT INTO news (id,title,category,briefing,content_type,replay_status,status,published_at,reference_at,curated_at,created_at,updated_at)
 SELECT X'11111111111141118111111111111111','[샘플] 미국 기준금리 동결','rate','API 테스트를 위한 가상 금리 뉴스입니다.','live','not_eligible','published','2026-10-01 09:00:00','2026-10-01 09:00:00','2026-10-01 09:00:00','2026-10-01 09:00:00','2026-10-01 09:00:00'
 WHERE NOT EXISTS (SELECT 1 FROM news WHERE id=X'11111111111141118111111111111111');

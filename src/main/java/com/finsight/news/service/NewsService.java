@@ -21,6 +21,7 @@ public class NewsService {
     private final NewsFactRepository facts;
     private final FeedbackSourceDocumentRepository documents;
     private final EntityManager em;
+    private final NewsTargetCandidateRepository candidates;
 
     public ListResponse list(UUID userId, String category, String market, String contentType, String replayStatus,
                              String sort, int page, int size) {
@@ -56,7 +57,15 @@ public class NewsService {
                     } else {
                         scores.add("(case when n.category = :" + key + " then 1 else 0 end)");
                     }
-                    parameters.put(key, interest.getInterestKey());
+                    String interestKey = interest.getInterestKey();
+                    if (interest.getInterestType() == UserInterest.InterestType.market) {
+                        interestKey = switch (interestKey) {
+                            case "korea" -> "korea_equity";
+                            case "us" -> "us_equity";
+                            default -> interestKey;
+                        };
+                    }
+                    parameters.put(key, interestKey);
                 }
             }
         }
@@ -77,6 +86,10 @@ public class NewsService {
                 new ApiException(HttpStatus.NOT_FOUND, "뉴스를 찾을 수 없습니다."));
     }
     public Detail detail(UUID id) { return Detail.from(published(id)); }
+    public Candidates targetCandidates(UUID id) {
+        published(id);
+        return new Candidates(candidates.findCandidates(id).stream().map(Candidate::from).toList());
+    }
     public Facts facts(UUID id) {
         published(id);
         return new Facts(facts.findByNewsIdOrderBySortOrderAscIdAsc(id).stream().map(Fact::from).toList());

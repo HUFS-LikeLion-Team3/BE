@@ -15,6 +15,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.UUID;
 
 @Entity
@@ -30,6 +31,8 @@ import java.util.UUID;
 @Getter
 @NoArgsConstructor
 public class LearningSession {
+
+    private static final ZoneId KOREA_ZONE = ZoneId.of("Asia/Seoul");
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -69,18 +72,50 @@ public class LearningSession {
 
     @PrePersist
     protected void onCreate() {
-        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime now = OffsetDateTime.now(KOREA_ZONE);
         createdAt = now;
         updatedAt = now;
     }
 
     @PreUpdate
     protected void onUpdate() {
-        updatedAt = OffsetDateTime.now();
+        updatedAt = OffsetDateTime.now(KOREA_ZONE);
     }
 
     public void markSaved() {
-        this.savedAt = OffsetDateTime.now();
+        OffsetDateTime now = OffsetDateTime.now(KOREA_ZONE);
+        this.savedAt = now;
+        this.updatedAt = now;
+    }
+
+    /** Freeze all prediction inputs and move to baseline collection state. */
+    public void markSubmitted(OffsetDateTime submittedAt) {
+        if (this.status != LearningStatus.drafting) {
+            throw new IllegalStateException("Session already submitted");
+        }
+        this.submittedAt = submittedAt;
+        this.status = LearningStatus.baseline_pending;
+    }
+
+    /**
+     * Monotonic transitions driven by persisted market outcomes. Never move backwards,
+     * and never override a session that has not been submitted or has completed.
+     */
+    public void advanceMarketStatus(LearningStatus target) {
+        if (target != LearningStatus.observing && target != LearningStatus.reflection_pending) {
+            throw new IllegalArgumentException("Invalid market status transition: " + target);
+        }
+        if (this.status == LearningStatus.baseline_pending
+                || (this.status == LearningStatus.observing
+                    && target == LearningStatus.reflection_pending)) {
+            this.status = target;
+        }
+    }
+
+    // Used only after the final reflection and all its notes are saved in one transaction.
+    public void markCompleted(OffsetDateTime completedAt) {
+        this.status = LearningStatus.completed;
+        this.completedAt = completedAt;
     }
 
     public enum SessionType {

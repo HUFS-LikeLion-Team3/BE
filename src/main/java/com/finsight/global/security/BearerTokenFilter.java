@@ -52,7 +52,12 @@ public class BearerTokenFilter extends OncePerRequestFilter {
         response.setContentType("application/json;charset=UTF-8");
         response.getWriter().write(JsonMapper.builder().build().writeValueAsString(new ErrorResponse(
                 OffsetDateTime.now(ZoneId.of("Asia/Seoul")), 401, "Unauthorized",
-                "/api/v1/users/me/consents".equals(request.getRequestURI())
+                requiresAuthenticationMessage(request.getRequestURI())
                         ? "인증이 필요합니다." : "로그인이 필요합니다.", request.getRequestURI())));
+    }
+
+    private static boolean requiresAuthenticationMessage(String path) {
+        return "/api/v1/users/me/consents".equals(path)
+                || path.matches("^/api/v1/learning-sessions/[^/]+/reflections$");
     }
 }

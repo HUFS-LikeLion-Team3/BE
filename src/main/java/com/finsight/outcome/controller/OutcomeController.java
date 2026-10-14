@@ -29,7 +29,6 @@ public class OutcomeController {
         UUID parsedLearningSessionId =
                 parseLearningSessionId(learningSessionId);
 
-        // TODO 인증 연동 후 로그인 사용자 ID로 교체
         UUID userId = currentUser.id();
 
         return ResponseEntity.ok(
@@ -51,7 +50,6 @@ public class OutcomeController {
         UUID parsedSessionTargetId =
                 parseSessionTargetId(sessionTargetId);
 
-        // TODO 인증 연동 후 로그인 사용자 ID로 교체
         UUID userId = currentUser.id();
 
         return ResponseEntity.ok(
@@ -74,7 +72,6 @@ public class OutcomeController {
         UUID parsedSessionTargetId =
                 parseSessionTargetId(sessionTargetId);
 
-        // TODO 인증 연동 후 로그인 사용자 ID로 교체
         UUID userId = currentUser.id();
 
         return ResponseEntity.ok(

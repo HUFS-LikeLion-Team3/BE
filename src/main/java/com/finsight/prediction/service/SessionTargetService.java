@@ -7,6 +7,7 @@ import com.finsight.prediction.dto.SessionTargetResponse;
 import com.finsight.prediction.dto.SessionTargetUpdateRequest;
 import com.finsight.prediction.entity.SessionTarget;
 import com.finsight.prediction.repository.SessionTargetRepository;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -24,6 +25,7 @@ public class SessionTargetService {
 
     private final LearningSessionRepository learningSessionRepository;
     private final SessionTargetRepository sessionTargetRepository;
+    private final EntityManager entityManager;
 
     public SessionTargetResponse findAll(
             UUID userId,
@@ -50,18 +52,58 @@ public class SessionTargetService {
             UUID learningSessionId,
             SessionTargetUpdateRequest request
     ) {
-        LearningSession session = getSession(learningSessionId);
+        LearningSession session = learningSessionRepository
+                .findByIdForUpdate(learningSessionId)
+                .orElseThrow(() -> new ApiException(
+                        HttpStatus.NOT_FOUND,
+                        "해당 학습 세션을 찾을 수 없습니다."
+                ));
 
         validateOwner(session, userId);
         validateModifiable(session);
         validateRequest(request);
 
-        /*
-         * TODO:
-         * market/news 도메인 코드가 develop에 합쳐진 뒤
-         * 모든 marketTargetId가 session.newsId의
-         * news_target_candidates인지 검증해야 함.
-         */
+        // 요청한 시장 대상 ID 목록
+        List<UUID> requestedTargetIds = request.targets().stream()
+                .map(SessionTargetUpdateRequest.TargetRequest::marketTargetId)
+                .toList();
+
+        if (!requestedTargetIds.isEmpty()) {
+
+            // 1. 실제 존재하는 시장 대상인지 확인
+            Long existingCount = entityManager.createQuery(
+                            "SELECT COUNT(t) FROM MarketTarget t " +
+                                    "WHERE t.id IN :targetIds",
+                            Long.class
+                    )
+                    .setParameter("targetIds", requestedTargetIds)
+                    .getSingleResult();
+
+            if (existingCount != requestedTargetIds.size()) {
+                throw new ApiException(
+                        HttpStatus.NOT_FOUND,
+                        "학습 세션 또는 시장 대상을 찾을 수 없습니다."
+                );
+            }
+
+            // 2. 해당 뉴스의 예측 후보인지 확인
+            Long candidateCount = entityManager.createQuery(
+                            "SELECT COUNT(c) FROM NewsTargetCandidate c " +
+                                    "WHERE c.news.id = :newsId " +
+                                    "AND c.target.id IN :targetIds",
+                            Long.class
+                    )
+                    .setParameter("newsId", session.getNewsId())
+                    .setParameter("targetIds", requestedTargetIds)
+                    .getSingleResult();
+
+            if (candidateCount != requestedTargetIds.size()) {
+                throw new ApiException(
+                        HttpStatus.BAD_REQUEST,
+                        "해당 뉴스의 예측 후보가 아닌 시장 대상이 포함되어 있습니다."
+                );
+            }
+        }
 
         List<SessionTarget> existingTargets =
                 sessionTargetRepository.findAllByLearningSessionId(

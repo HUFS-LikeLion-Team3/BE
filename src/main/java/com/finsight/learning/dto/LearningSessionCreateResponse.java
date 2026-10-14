@@ -19,7 +19,7 @@ public record LearningSessionCreateResponse(
                 session.getNewsId(),
                 session.getSessionType().name(),
                 session.getStatus().name(),
-                session.getCreatedAt()
+                LearningSessionDateTime.toKorea(session.getCreatedAt())
         );
     }
 }

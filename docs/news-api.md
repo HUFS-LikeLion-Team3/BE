@@ -20,7 +20,7 @@ sample 프로필은 필요할 때만 활성화하며 재실행해도 중복 삽�
 
 모두 가상 자료이며 제목에 [샘플]을 표시합니다.
 기본 목록은 한국 뉴스 → 미국 뉴스 순서입니다. Replay 뉴스는 contentType=replay로 조회합니다.
-관심 시장 us_equity, 관심 주제 rate가 저장된 사용자의 추천은 미국 뉴스 → 한국 뉴스 순서입니다.
+관심 시장 us(기존 us_equity도 호환), 관심 주제 rate가 저장된 사용자의 추천은 미국 뉴스 → 한국 뉴스 순서입니다.
 로그인 사용자·관심사는 자동 생성하거나 변경하지 않습니다.
 
 모든 API는 Bearer 인증이 필요합니다.
@@ -44,10 +44,10 @@ contentType은 live/replay, sort는 latest/recommended를 허용합니다.
 추천 점수는 user_interests의 현재 관심사 일치 개수의 합입니다.
 topic의 interest_key는 news.category에, market의 interest_key는
 news_target_candidates로 연결된 market_targets.market_category에 대응합니다.
-ERD에 관심사 키 사전이 없어 이 대응 규칙을 사용하며, 별도 키 사전 확정 시 조정해야 합니다.
+시장 관심사 korea, us는 각각 korea_equity, us_equity로 매칭하며 기존 저장 키도 호환합니다.
 점수 내림차순, 공개 시각 내림차순, ID 오름차순으로 DB에서 정렬 후 페이지를 적용합니다.
 관심사가 없으면 최신순이며 일치하지 않은 뉴스도 반환합니다.
-관심사 저장/수정 API는 이 조회 API 범위에 포함되지 않습니다.
+관심사 저장/수정은 PUT /api/v1/users/me/interests를 사용합니다(docs/user-interests.md 참조).
 관심사 입력 경로는 UserInterestRepository를 사용합니다.
 
 뉴스 상세와 출처 조회는 학습 세션을 생성하지 않습니다.

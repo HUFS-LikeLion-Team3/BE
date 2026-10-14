@@ -23,12 +23,14 @@ public class NewsService {
     private final EntityManager em;
     private final NewsTargetCandidateRepository candidates;
 
-    public ListResponse list(UUID userId, String category, String contentType, String replayStatus,
+    public ListResponse list(UUID userId, String category, String market, String contentType, String replayStatus,
                              String sort, int page, int size) {
         if (contentType == null) contentType = "live";
+        if (market == null) market = "all";
         if (page < 0 || size < 1 || size > 100 || (long) page * size > Integer.MAX_VALUE
                 || (contentType != null && !Set.of("live", "replay").contains(contentType))
                 || !Set.of("latest", "recommended").contains(sort)
+                || !Set.of("korea", "us", "all").contains(market)
                 || (category != null && (category.isBlank() || category.length() > 255))
                 || (replayStatus != null && !Set.of("not_eligible", "eligible", "featured").contains(replayStatus))) {
             throw invalid();
@@ -37,6 +39,10 @@ public class NewsService {
         StringBuilder query = new StringBuilder("select n from News n where n.status = 'published'");
         query.append(" and n.contentType = :contentType");
         parameters.put("contentType", contentType);
+        if (!"all".equals(market)) {
+            query.append(" and exists (select c from NewsTargetCandidate c where c.news = n and c.target.marketCategory = :marketCategory)");
+            parameters.put("marketCategory", "korea".equals(market) ? "korea_equity" : "us_equity");
+        }
         if (category != null) { query.append(" and n.category = :category"); parameters.put("category", category); }
         if (replayStatus != null) { query.append(" and n.replayStatus = :replayStatus"); parameters.put("replayStatus", replayStatus); }
         var scores = new ArrayList<String>();

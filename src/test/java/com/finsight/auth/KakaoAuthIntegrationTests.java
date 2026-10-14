@@ -59,6 +59,36 @@ class KakaoAuthIntegrationTests {
     }
 
     @Test
+    void loginIssuedJwtMatchesDatabaseUserAndCreatesOwnedLearningSession() throws Exception {
+        var loginResult = mvc.perform(post("/api/v1/auth/kakao").contentType("application/json")
+                .content("{\"authorizationCode\":\"valid-code\"}"))
+                .andExpect(status().isOk()).andReturn();
+        var json = tools.jackson.databind.json.JsonMapper.builder().build()
+                .readTree(loginResult.getResponse().getContentAsString());
+        String accessToken = json.get("accessToken").asText();
+        var userId = java.util.UUID.fromString(json.get("user").get("id").asText());
+        assertEquals(userId, tokens.authenticate(accessToken).orElseThrow());
+        assertTrue(users.existsById(userId));
+        mvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(userId.toString()));
+        var newsId = java.util.UUID.randomUUID();
+        var sessionResult = mvc.perform(post("/api/v1/learning-sessions")
+                .header("Authorization", "Bearer " + accessToken).contentType("application/json")
+                .content("{\"newsId\":\"" + newsId + "\",\"sessionType\":\"live\"}"))
+                .andExpect(status().isCreated()).andReturn();
+        var sessionId = tools.jackson.databind.json.JsonMapper.builder().build()
+                .readTree(sessionResult.getResponse().getContentAsString()).get("id").asText();
+        var storedUserId = jdbc.queryForObject("SELECT user_id FROM learning_sessions WHERE id = ?",
+                byte[].class, java.nio.ByteBuffer.allocate(16)
+                        .putLong(java.util.UUID.fromString(sessionId).getMostSignificantBits())
+                        .putLong(java.util.UUID.fromString(sessionId).getLeastSignificantBits()).array());
+        var buffer = java.nio.ByteBuffer.wrap(storedUserId);
+        assertEquals(userId, new java.util.UUID(buffer.getLong(), buffer.getLong()));
+        mvc.perform(get("/api/v1/learning-sessions").header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void consentListContainsOnlyAuthenticatedUsersRecords() throws Exception {
         var first = loginService.login("first");
         when(kakao.authenticate("second")).thenReturn(new KakaoClient.Profile(456L, "다른 사용자"));

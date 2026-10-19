@@ -4,6 +4,9 @@ package com.finsight.auth;
 import com.finsight.auth.repository.*;
 import com.finsight.auth.service.*;
 import com.finsight.global.exception.ApiException;
+import com.finsight.news.entity.News;
+import com.finsight.news.repository.NewsRepository;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,6 +44,7 @@ class KakaoAuthIntegrationTests {
     @Autowired WebApplicationContext context;
     @Autowired UserRepository users;
     @Autowired UserConsentRepository consents;
+    @Autowired NewsRepository news;
 
     @Autowired KakaoLoginService loginService;
     @Autowired TokenService tokens;
@@ -56,6 +60,44 @@ class KakaoAuthIntegrationTests {
         users.deleteAll();
         when(kakao.authenticate(anyString())).thenReturn(new KakaoClient.Profile(123L, "사용자"));
         mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
+    }
+
+    @Test
+    void loginIssuedJwtMatchesDatabaseUserAndCreatesOwnedLearningSession() throws Exception {
+        var loginResult = mvc.perform(post("/api/v1/auth/kakao").contentType("application/json")
+                .content("{\"authorizationCode\":\"valid-code\"}"))
+                .andExpect(status().isOk()).andReturn();
+        var json = tools.jackson.databind.json.JsonMapper.builder().build()
+                .readTree(loginResult.getResponse().getContentAsString());
+        String accessToken = json.get("accessToken").asText();
+        var userId = java.util.UUID.fromString(json.get("user").get("id").asText());
+        assertEquals(userId, tokens.authenticate(accessToken).orElseThrow());
+        assertTrue(users.existsById(userId));
+        mvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(userId.toString()));
+        var publishedNews = new News();
+        var publishedAt = Instant.parse("2026-10-01T09:00:00Z");
+        ReflectionTestUtils.setField(publishedNews, "title", "인증 후 학습 세션 생성 검증");
+        ReflectionTestUtils.setField(publishedNews, "category", "rate");
+        ReflectionTestUtils.setField(publishedNews, "briefing", "게시된 뉴스로 학습 세션을 생성합니다.");
+        ReflectionTestUtils.setField(publishedNews, "status", "published");
+        ReflectionTestUtils.setField(publishedNews, "publishedAt", publishedAt);
+        ReflectionTestUtils.setField(publishedNews, "referenceAt", publishedAt);
+        var newsId = news.saveAndFlush(publishedNews).getId();
+        var sessionResult = mvc.perform(post("/api/v1/learning-sessions")
+                .header("Authorization", "Bearer " + accessToken).contentType("application/json")
+                .content("{\"newsId\":\"" + newsId + "\",\"sessionType\":\"live\"}"))
+                .andExpect(status().isCreated()).andReturn();
+        var sessionId = tools.jackson.databind.json.JsonMapper.builder().build()
+                .readTree(sessionResult.getResponse().getContentAsString()).get("id").asText();
+        var storedUserId = jdbc.queryForObject("SELECT user_id FROM learning_sessions WHERE id = ?",
+                byte[].class, java.nio.ByteBuffer.allocate(16)
+                        .putLong(java.util.UUID.fromString(sessionId).getMostSignificantBits())
+                        .putLong(java.util.UUID.fromString(sessionId).getLeastSignificantBits()).array());
+        var buffer = java.nio.ByteBuffer.wrap(storedUserId);
+        assertEquals(userId, new java.util.UUID(buffer.getLong(), buffer.getLong()));
+        mvc.perform(get("/api/v1/learning-sessions").header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk());
     }
 
     @Test

@@ -4,6 +4,9 @@ package com.finsight.auth;
 import com.finsight.auth.repository.*;
 import com.finsight.auth.service.*;
 import com.finsight.global.exception.ApiException;
+import com.finsight.news.entity.News;
+import com.finsight.news.repository.NewsRepository;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,6 +44,7 @@ class KakaoAuthIntegrationTests {
     @Autowired WebApplicationContext context;
     @Autowired UserRepository users;
     @Autowired UserConsentRepository consents;
+    @Autowired NewsRepository news;
 
     @Autowired KakaoLoginService loginService;
     @Autowired TokenService tokens;
@@ -71,7 +75,15 @@ class KakaoAuthIntegrationTests {
         assertTrue(users.existsById(userId));
         mvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(userId.toString()));
-        var newsId = java.util.UUID.randomUUID();
+        var publishedNews = new News();
+        var publishedAt = Instant.parse("2026-10-01T09:00:00Z");
+        ReflectionTestUtils.setField(publishedNews, "title", "인증 후 학습 세션 생성 검증");
+        ReflectionTestUtils.setField(publishedNews, "category", "rate");
+        ReflectionTestUtils.setField(publishedNews, "briefing", "게시된 뉴스로 학습 세션을 생성합니다.");
+        ReflectionTestUtils.setField(publishedNews, "status", "published");
+        ReflectionTestUtils.setField(publishedNews, "publishedAt", publishedAt);
+        ReflectionTestUtils.setField(publishedNews, "referenceAt", publishedAt);
+        var newsId = news.saveAndFlush(publishedNews).getId();
         var sessionResult = mvc.perform(post("/api/v1/learning-sessions")
                 .header("Authorization", "Bearer " + accessToken).contentType("application/json")
                 .content("{\"newsId\":\"" + newsId + "\",\"sessionType\":\"live\"}"))

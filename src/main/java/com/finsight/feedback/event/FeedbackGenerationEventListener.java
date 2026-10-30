@@ -16,12 +16,16 @@ public class FeedbackGenerationEventListener {
 
     private final FeedbackGenerationService feedbackGenerationService;
 
-    @Value("${finsight.ai.enabled:true}")
+    @Value("${finsight.ai.enabled:false}")
     private boolean enabled;
 
     @Async("feedbackTaskExecutor")
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    public void handlePredictionSubmitted(PredictionSubmittedEvent event) {
+    @TransactionalEventListener(
+            phase = TransactionPhase.AFTER_COMMIT
+    )
+    public void handlePredictionSubmitted(
+            PredictionSubmittedEvent event
+    ) {
         if (!enabled) {
             return;
         }
@@ -33,7 +37,9 @@ public class FeedbackGenerationEventListener {
     }
 
     @Async("feedbackTaskExecutor")
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(
+            phase = TransactionPhase.AFTER_COMMIT
+    )
     public void handleFinalReflectionSubmitted(
             FinalReflectionSubmittedEvent event
     ) {

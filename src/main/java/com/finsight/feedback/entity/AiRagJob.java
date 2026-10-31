@@ -50,7 +50,7 @@ public class AiRagJob {
     private String packageId;
 
     @Lob
-    @Column(name = "request_json")
+    @Column(name = "request_json", columnDefinition = "LONGTEXT")
     private String requestJson;
 
     @Column(name = "job_id", unique = true)

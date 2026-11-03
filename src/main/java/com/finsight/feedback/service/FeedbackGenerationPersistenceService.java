@@ -1,3 +1,4 @@
+
 package com.finsight.feedback.service;
 
 import com.finsight.feedback.client.FeedbackModelClient;
@@ -18,7 +19,6 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -39,9 +39,7 @@ public class FeedbackGenerationPersistenceService {
     private final AiFeedbackReferenceRepository referenceRepository;
     private final AiFeedbackItemReferenceRepository itemReferenceRepository;
 
-    @Transactional(
-            propagation = Propagation.REQUIRES_NEW
-    )
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public UUID prepare(
             UUID sessionId,
             AiFeedback.FeedbackStage stage,
@@ -54,8 +52,7 @@ public class FeedbackGenerationPersistenceService {
         sessionRepository.findByIdForUpdate(sessionId)
                 .orElseThrow(() ->
                         new IllegalStateException(
-                                "Learning session not found: "
-                                        + sessionId
+                                "Learning session not found: " + sessionId
                         )
                 );
 
@@ -87,16 +84,13 @@ public class FeedbackGenerationPersistenceService {
         return feedback.getId();
     }
 
-    @Transactional(
-            propagation = Propagation.REQUIRES_NEW
-    )
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void saveSnapshot(
             UUID feedbackId,
             FeedbackGenerationInput input
     ) {
         var previous =
-                snapshotRepository
-                        .findByAiFeedbackId(feedbackId);
+                snapshotRepository.findByAiFeedbackId(feedbackId);
 
         if (previous.isPresent()) {
             if (!previous.get()
@@ -123,9 +117,7 @@ public class FeedbackGenerationPersistenceService {
         );
     }
 
-    @Transactional(
-            propagation = Propagation.REQUIRES_NEW
-    )
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean claim(UUID feedbackId) {
         AiFeedback feedback =
                 feedbackRepository
@@ -141,9 +133,7 @@ public class FeedbackGenerationPersistenceService {
         return true;
     }
 
-    @Transactional(
-            propagation = Propagation.REQUIRES_NEW
-    )
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void complete(
             UUID feedbackId,
             AiFeedback.FeedbackStage stage,
@@ -167,13 +157,6 @@ public class FeedbackGenerationPersistenceService {
             );
         }
 
-        if (result.flowSummary() == null
-                || result.flowSummary().isBlank()) {
-            throw new IllegalStateException(
-                    "AI flow summary is empty."
-            );
-        }
-
         List<FeedbackModelClient.Item> sortedItems =
                 result.items() == null
                         ? List.of()
@@ -181,29 +164,47 @@ public class FeedbackGenerationPersistenceService {
                           .stream()
                           .sorted(
                                   Comparator.comparingInt(
-                                          FeedbackModelClient.Item
-                                          ::sortOrder
+                                          FeedbackModelClient.Item::sortOrder
+                                  ).thenComparing(
+                                          FeedbackModelClient.Item::sessionTargetId,
+                                          Comparator.nullsFirst(String::compareTo)
                                   )
                           )
                           .toList();
 
-        validateItems(
+        FeedbackItemRules.validate(
                 stage,
+                feedback.getPromptVersion(),
                 input,
                 sortedItems
         );
 
-        Map<UUID, AiFeedbackReference>
-                referencesByChunk =
+        String flowSummary = result.flowSummary();
+
+        for (FeedbackModelClient.Item item : sortedItems) {
+            if (item.sessionTargetId() == null
+                    && "flow_summary".equals(item.type())) {
+                flowSummary = item.content();
+                break;
+            }
+        }
+
+        if (flowSummary == null || flowSummary.isBlank()) {
+            throw new IllegalStateException(
+                    "AI flow summary is empty."
+            );
+        }
+
+        Map<UUID, AiFeedbackReference> referencesByChunk =
                 createReferences(
                         feedbackId,
                         input,
                         sortedItems
                 );
 
-        for (FeedbackModelClient.Item resultItem :
-                sortedItems) {
+        int storageSortOrder = 0;
 
+        for (FeedbackModelClient.Item resultItem : sortedItems) {
             UUID targetId =
                     resultItem.sessionTargetId() == null
                             ? null
@@ -217,12 +218,10 @@ public class FeedbackGenerationPersistenceService {
                                     feedbackId,
                                     targetId,
                                     AiFeedbackItem.FeedbackItemType
-                                            .valueOf(
-                                                    resultItem.type()
-                                            ),
+                                            .valueOf(resultItem.type()),
                                     resultItem.content(),
                                     resultItem.variablesToCheck(),
-                                    resultItem.sortOrder()
+                                    ++storageSortOrder
                             )
                     );
 
@@ -234,9 +233,7 @@ public class FeedbackGenerationPersistenceService {
 
             for (String rawChunkId :
                     resultItem.referenceChunkIds()) {
-
-                UUID chunkId =
-                        UUID.fromString(rawChunkId);
+                UUID chunkId = UUID.fromString(rawChunkId);
 
                 if (!linked.add(chunkId)) {
                     continue;
@@ -263,90 +260,13 @@ public class FeedbackGenerationPersistenceService {
 
         feedback.markReady(
                 result.modelVersion(),
-                result.flowSummary(),
+                flowSummary,
                 result.insufficientEvidence(),
                 OffsetDateTime.now()
         );
     }
 
-    private void validateItems(
-            AiFeedback.FeedbackStage stage,
-            FeedbackGenerationInput input,
-            List<FeedbackModelClient.Item> items
-    ) {
-        Set<Integer> sortOrders = new HashSet<>();
-
-        Set<String> allowedTypes =
-                stage == AiFeedback.FeedbackStage.INITIAL
-                        ? Set.of(
-                        "initial_uncertainty",
-                        "initial_counter_scenario",
-                        "initial_factor_to_review",
-                        "interpretation_limit"
-                )
-                        : Set.of(
-                        "final_observed_flow",
-                        "final_co_observed_factors",
-                        "final_reflection_improvement",
-                        "final_next_hypothesis",
-                        "interpretation_limit"
-                );
-
-        for (FeedbackModelClient.Item item : items) {
-            if (item.content() == null
-                    || item.content().isBlank()) {
-                throw new IllegalStateException(
-                        "AI feedback item body is empty."
-                );
-            }
-
-            if (!allowedTypes.contains(item.type())) {
-                throw new IllegalStateException(
-                        "Invalid feedback item type: "
-                                + item.type()
-                );
-            }
-
-            if (!sortOrders.add(item.sortOrder())) {
-                throw new IllegalStateException(
-                        "Duplicate feedback sort order."
-                );
-            }
-
-            if (item.sessionTargetId() != null) {
-                UUID targetId =
-                        UUID.fromString(
-                                item.sessionTargetId()
-                        );
-
-                if (!input.allowedTargetIds()
-                        .contains(targetId)) {
-                    throw new IllegalStateException(
-                            "AI returned an unknown session target."
-                    );
-                }
-            }
-
-            if (item.referenceChunkIds() != null) {
-                for (String rawChunkId :
-                        item.referenceChunkIds()) {
-
-                    UUID chunkId =
-                            UUID.fromString(rawChunkId);
-
-                    if (!input.evidenceChunks()
-                            .containsKey(chunkId)) {
-                        throw new IllegalStateException(
-                                "AI returned an unknown reference chunk."
-                        );
-                    }
-                }
-            }
-        }
-    }
-
-    private Map<UUID, AiFeedbackReference>
-    createReferences(
+    private Map<UUID, AiFeedbackReference> createReferences(
             UUID feedbackId,
             FeedbackGenerationInput input,
             List<FeedbackModelClient.Item> items
@@ -361,8 +281,7 @@ public class FeedbackGenerationPersistenceService {
 
             for (String rawChunkId :
                     item.referenceChunkIds()) {
-                UUID chunkId =
-                        UUID.fromString(rawChunkId);
+                UUID chunkId = UUID.fromString(rawChunkId);
 
                 usageByChunk.putIfAbsent(
                         chunkId,
@@ -378,7 +297,6 @@ public class FeedbackGenerationPersistenceService {
 
         for (Map.Entry<UUID, String> entry :
                 usageByChunk.entrySet()) {
-
             FeedbackGenerationInput.EvidenceChunk evidence =
                     input.evidenceChunks()
                             .get(entry.getKey());
@@ -396,9 +314,7 @@ public class FeedbackGenerationPersistenceService {
                                     evidence.sourceDocumentId(),
                                     evidence.chunkId(),
                                     "근거 " + sortOrder,
-                                    excerpt(
-                                            evidence.content()
-                                    ),
+                                    excerpt(evidence.content()),
                                     entry.getValue(),
                                     sortOrder
                             )
@@ -429,9 +345,7 @@ public class FeedbackGenerationPersistenceService {
         return content.substring(0, maxLength);
     }
 
-    @Transactional(
-            propagation = Propagation.REQUIRES_NEW
-    )
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void fail(
             UUID feedbackId,
             String failureCode
@@ -439,9 +353,7 @@ public class FeedbackGenerationPersistenceService {
         feedbackRepository
                 .findByIdForUpdate(feedbackId)
                 .ifPresent(feedback ->
-                        feedback.markFailed(
-                                failureCode
-                        )
+                        feedback.markFailed(failureCode)
                 );
     }
 }

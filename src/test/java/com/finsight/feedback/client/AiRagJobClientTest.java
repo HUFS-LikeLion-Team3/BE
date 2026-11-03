@@ -10,6 +10,7 @@ import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -231,4 +232,23 @@ class AiRagJobClientTest {
                 error.getMessage().contains("initialJobId")
         );
     }
+    @Test
+    void approvedResultRawRetainsExactWhitespaceAndUnicode() throws Exception {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        UUID jobId = UUID.randomUUID();
+        String raw = " {\n  \"resultHash\":\"sha256:abc\", \"citationExcerpt\":\"안녕하세요  \" \n}";
+        server.createContext("/internal/v1/jobs/" + jobId + "/result", exchange -> {
+            assertEquals("GET", exchange.getRequestMethod());
+            byte[] bytes = raw.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (var out = exchange.getResponseBody()) {
+                out.write(bytes);
+            }
+        });
+        server.start();
+
+        assertEquals(raw, client().getApprovedResultRaw(jobId));
+    }
+
 }

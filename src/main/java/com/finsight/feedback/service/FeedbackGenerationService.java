@@ -32,6 +32,7 @@ public class FeedbackGenerationService {
     private final AiRagJobStore jobStore;
     private final AiRagContractMapper contractMapper;
     private final AiRagJobClient ragClient;
+    private final ApprovedFeedbackPersistenceService approvedPersistence;
 
     @Value("${finsight.ai.prompt-version:feedback-p0-v1}")
     private String promptVersion;
@@ -394,9 +395,41 @@ public class FeedbackGenerationService {
             );
         }
 
-        return ragClient.getApprovedResult(
-                stored.getJobId()
-        );
+        // A blocked AI result endpoint returns 409. Never call it again if
+        // the exact approved result was captured before a previous failure.
+        if (stored.getApprovedResultJson() != null) {
+            return ragClient.parseResponse(stored.getApprovedResultJson());
+        }
+
+        String rawJson = ragClient.getApprovedResultRaw(stored.getJobId());
+        Map<String, Object> response;
+        try {
+            response = ragClient.parseResponse(rawJson);
+        } catch (RuntimeException ex) {
+            // Even invalid raw output must survive a restart for diagnosis.
+            jobStore.captureApprovedResult(
+                    feedbackId, stored.getJobId(), rawJson, null);
+            throw ex;
+        }
+
+        String hash = response.get("resultHash") instanceof String value
+                && !value.isBlank() ? value : null;
+
+        // Own committed transaction; no JPA item/source write precedes it.
+        jobStore.captureApprovedResult(
+                feedbackId, stored.getJobId(), rawJson, hash);
+
+        return response;
+    }
+
+    /**
+     * Manual handoff until the durable polling / blocked+stored delivery loop
+     * is wired. Always capture the original response in a separately committed
+     * transaction BEFORE trying any item/citation persistence.
+     */
+    public boolean storeApprovedResult(UUID feedbackId) {
+        fetchApprovedResult(feedbackId);
+        return approvedPersistence.persistCaptured(feedbackId);
     }
 
     private String errorCode(Exception ex) {

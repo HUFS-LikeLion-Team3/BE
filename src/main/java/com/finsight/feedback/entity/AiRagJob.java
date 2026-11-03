@@ -59,6 +59,18 @@ public class AiRagJob {
     @Column(name = "rag_snapshot_hash", length = 64)
     private String ragSnapshotHash;
 
+    // Unmodified UTF-8 JSON response from the approved result endpoint.
+    // Preserved before any document/chunk validation and never overwritten.
+    @Lob
+    @Column(name = "approved_result_json", columnDefinition = "LONGTEXT")
+    private String approvedResultJson;
+
+    @Column(name = "result_hash", length = 128)
+    private String resultHash;
+
+    @Column(name = "approved_result_captured_at")
+    private OffsetDateTime approvedResultCapturedAt;
+
     @Column(name = "state", nullable = false, length = 32)
     private String state;
 
@@ -142,6 +154,58 @@ public class AiRagJob {
         if (ragHash != null && !ragHash.isBlank()) {
             this.ragSnapshotHash = ragHash;
         }
+    }
+
+    /**
+     * The approved result is immutable for a given AI job. A second read may
+     * re-use the same payload; replacing it with a different result is forbidden.
+     * A missing resultHash is left null for downstream validation to block.
+     */
+    public void captureApprovedResult(
+            UUID expectedJobId,
+            String responseJson,
+            String hash
+    ) {
+        if (jobId == null || !jobId.equals(expectedJobId)) {
+            throw new IllegalStateException("approved_result_job_mismatch");
+        }
+        if (responseJson == null || responseJson.isBlank()) {
+            throw new IllegalArgumentException("approved_result_empty");
+        }
+        if (approvedResultJson != null && !approvedResultJson.equals(responseJson)) {
+            throw new IllegalStateException("approved_result_conflict");
+        }
+        if (resultHash != null && hash != null && !resultHash.equals(hash)) {
+            throw new IllegalStateException("approved_result_hash_conflict");
+        }
+        if (approvedResultJson == null) {
+            approvedResultJson = responseJson;
+            approvedResultCapturedAt = OffsetDateTime.now();
+        }
+        if (resultHash == null && hash != null && !hash.isBlank()) {
+            resultHash = hash;
+        }
+    }
+
+    public void markDeliveryBlocked(String reason) {
+        if ("stored".equals(state)) {
+            return; // A delayed blocked notification must never regress stored.
+        }
+        if (approvedResultJson == null) {
+            throw new IllegalStateException("approved_result_not_captured");
+        }
+        state = "blocked";
+        failureCode = reason;
+    }
+
+    public void markDeliveryStored(UUID expectedJobId, String expectedResultHash) {
+        if (jobId == null || !jobId.equals(expectedJobId)
+                || approvedResultJson == null || resultHash == null
+                || !resultHash.equals(expectedResultHash)) {
+            throw new IllegalStateException("approved_delivery_identity_mismatch");
+        }
+        state = "stored";
+        failureCode = null;
     }
 
     @PrePersist

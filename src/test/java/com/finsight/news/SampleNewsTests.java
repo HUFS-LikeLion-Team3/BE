@@ -20,6 +20,16 @@ import static org.junit.jupiter.api.Assertions.*;
 class SampleNewsTests {
     @Autowired JdbcTemplate jdbc;
     @Autowired DataSource dataSource;
+    @Test void hidingSamplesPreservesTargetsAndNewsCandidateLinks() {
+        int links = jdbc.queryForObject("select count(*) from news_target_candidates", Integer.class);
+        var migration = new ResourceDatabasePopulator(new org.springframework.core.io.FileSystemResource(
+                "docs/migrations/market-targets-hide-samples.sql"));
+        migration.execute(dataSource);
+        migration.execute(dataSource);
+        assertEquals(2, jdbc.queryForObject("select count(*) from market_targets where code in ('SAMPLE_US','SAMPLE_KR')", Integer.class));
+        assertEquals(0, jdbc.queryForObject("select count(*) from market_targets where code in ('SAMPLE_US','SAMPLE_KR') and is_active=true", Integer.class));
+        assertEquals(links, jdbc.queryForObject("select count(*) from news_target_candidates", Integer.class));
+    }
     @Test void sampleDataLoadsAndCanBeLoadedAgain() {
         jdbc.update("update market_targets set unit='%' where code in ('SAMPLE_US', 'SAMPLE_KR')");
         new ResourceDatabasePopulator(new ClassPathResource("sample-news.sql")).execute(dataSource);

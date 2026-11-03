@@ -1,3 +1,4 @@
+
 package com.finsight.feedback.entity;
 
 import jakarta.persistence.Column;
@@ -80,6 +81,12 @@ public class AiFeedbackItem {
         final_co_observed_factors,
         final_reflection_improvement,
         final_next_hypothesis,
-        interpretation_limit
+        interpretation_limit,
+        news_analysis,
+        initial_market_impact,
+        initial_prediction_review,
+        final_market_explanation,
+        final_prediction_review,
+        final_takeaway
     }
 }

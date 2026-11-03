@@ -1,3 +1,4 @@
+
 package com.finsight.feedback.dto;
 
 import com.finsight.feedback.entity.AiFeedback;
@@ -25,6 +26,7 @@ public record FeedbackDetailResponse(
         OffsetDateTime generatedAt,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
+        List<FeedbackItemResponse> sessionItems,
         List<TargetFeedbackResponse> targetFeedbacks,
         List<ReferenceResponse> references
 ) {
@@ -32,6 +34,7 @@ public record FeedbackDetailResponse(
     public static FeedbackDetailResponse from(
             AiFeedback feedback,
             String flowSummary,
+            List<FeedbackItemResponse> sessionItems,
             List<TargetFeedbackResponse> targetFeedbacks,
             List<ReferenceResponse> references
     ) {
@@ -54,6 +57,22 @@ public record FeedbackDetailResponse(
                 feedback.getGeneratedAt(),
                 feedback.getCreatedAt(),
                 feedback.getUpdatedAt(),
+                sessionItems,
+                targetFeedbacks,
+                references
+        );
+    }
+
+    public static FeedbackDetailResponse from(
+            AiFeedback feedback,
+            String flowSummary,
+            List<TargetFeedbackResponse> targetFeedbacks,
+            List<ReferenceResponse> references
+    ) {
+        return from(
+                feedback,
+                flowSummary,
+                List.of(),
                 targetFeedbacks,
                 references
         );

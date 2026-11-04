@@ -158,6 +158,26 @@ public class AiFeedback {
         this.failureCode = null;
     }
 
+    /** Execution metadata comes from the actual approved AI job, not its prose. */
+    public void markApprovedReady(
+            String actualModelVersion,
+            String actualPromptVersion,
+            String actualPolicyVersion,
+            String flowSummary,
+            boolean insufficientEvidence,
+            OffsetDateTime generatedAt
+    ) {
+        if (actualModelVersion == null || actualModelVersion.isBlank()
+                || actualPromptVersion == null || actualPromptVersion.isBlank()
+                || actualPolicyVersion == null || actualPolicyVersion.isBlank()
+                || generatedAt == null) {
+            throw new IllegalStateException("approved_execution_metadata_missing");
+        }
+        markReady(actualModelVersion, flowSummary, insufficientEvidence, generatedAt);
+        this.promptVersion = actualPromptVersion;
+        this.policyVersion = actualPolicyVersion;
+    }
+
     public void markFailed(String failureCode) {
         if (status == FeedbackStatus.ready) {
             return;

@@ -37,6 +37,10 @@ finsight:
     enabled: ${AI_FEEDBACK_ENABLED:true}
     prompt-version: ${AI_PROMPT_VERSION:feedback-p0-v1}
     policy-version: ${AI_POLICY_VERSION:feedback-policy-p0-v1}
+    rag-polling:
+      enabled: ${AI_RAG_POLLING_ENABLED:false}
+      interval-ms: ${AI_RAG_POLLING_INTERVAL_MS:5000}
+      initial-delay-ms: ${AI_RAG_POLLING_INITIAL_DELAY_MS:5000}
     openai:
       api-key: ${OPENAI_API_KEY:}
       model: ${OPENAI_MODEL:gpt-5.6}

@@ -86,6 +86,36 @@ public class AiRagJobStore {
                 .uncertain(failureCode);
     }
 
+    /**
+     * Capture in its own committed transaction BEFORE any citation/source writes.
+     * The existing ai_rag_jobs row and AI job identity are locked and verified.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void captureApprovedResult(
+            UUID feedbackId,
+            UUID aiJobId,
+            String originalJson,
+            String resultHash
+    ) {
+        repository.findByIdForUpdate(feedbackId)
+                .orElseThrow(() -> new IllegalStateException("ai_rag_job_missing"))
+                .captureApprovedResult(aiJobId, originalJson, resultHash);
+    }
+
+    /** Persist local storage block even if the AI delivery HTTP call fails. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void blocked(UUID feedbackId, String reason) {
+        AiRagJob job = repository.findByIdForUpdate(feedbackId).orElseThrow();
+        job.markDeliveryBlocked(reason);
+    }
+
+    /** Mark stored only AFTER AI has acknowledged the delivery POST. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void stored(UUID feedbackId, UUID aiJobId, String resultHash) {
+        AiRagJob job = repository.findByIdForUpdate(feedbackId).orElseThrow();
+        job.markDeliveryStored(aiJobId, resultHash);
+    }
+
     @Transactional(
             propagation = Propagation.REQUIRES_NEW
     )

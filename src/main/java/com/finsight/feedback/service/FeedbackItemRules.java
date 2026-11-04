@@ -214,41 +214,43 @@ public final class FeedbackItemRules {
             }
         }
 
-        if (v2) {
-            Set<String> sessionRequired =
-                    stage == AiFeedback.FeedbackStage.INITIAL
-                            ? Set.of(
-                            "flow_summary",
-                            "news_analysis"
-                    )
-                            : Set.of("flow_summary");
+        validateRequiredTypes(stage, promptVersion, allowedTargets, typesByScope);
+    }
 
-            checkRequired(
-                    "session",
-                    sessionRequired,
-                    typesByScope
-            );
+    /**
+     * Shared v2 completeness check for both model-generated and approved RAG
+     * results. Legacy prompt versions keep their existing requirements.
+     */
+    static void validateRequiredTypes(
+            AiFeedback.FeedbackStage stage,
+            String promptVersion,
+            Set<UUID> allowedTargets,
+            Map<String, Set<String>> typesByScope
+    ) {
+        if (!V2_PROMPT_VERSION.equals(promptVersion)) {
+            return;
+        }
 
-            Set<String> targetRequired =
-                    stage == AiFeedback.FeedbackStage.INITIAL
-                            ? Set.of(
-                            "initial_market_impact",
-                            "initial_prediction_review",
-                            "initial_counter_scenario"
-                    )
-                            : Set.of(
-                            "final_observed_flow",
-                            "final_market_explanation",
-                            "final_prediction_review"
-                    );
+        Set<String> sessionRequired =
+                stage == AiFeedback.FeedbackStage.INITIAL
+                        ? Set.of("flow_summary", "news_analysis")
+                        : Set.of("flow_summary");
+        checkRequired("session", sessionRequired, typesByScope);
 
-            for (UUID allowedTargetId : allowedTargets) {
-                checkRequired(
-                        allowedTargetId.toString(),
-                        targetRequired,
-                        typesByScope
-                );
-            }
+        Set<String> targetRequired =
+                stage == AiFeedback.FeedbackStage.INITIAL
+                        ? Set.of(
+                                "initial_market_impact",
+                                "initial_prediction_review",
+                                "initial_counter_scenario"
+                        )
+                        : Set.of(
+                                "final_observed_flow",
+                                "final_market_explanation",
+                                "final_prediction_review"
+                        );
+        for (UUID targetId : allowedTargets) {
+            checkRequired(targetId.toString(), targetRequired, typesByScope);
         }
     }
 

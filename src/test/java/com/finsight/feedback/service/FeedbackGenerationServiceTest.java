@@ -38,6 +38,7 @@ class FeedbackGenerationServiceTest {
     @Mock AiRagJobStore jobStore;
     @Mock AiRagContractMapper contractMapper;
     @Mock AiRagJobClient ragClient;
+    @Mock ApprovedFeedbackPersistenceService approvedPersistence;
 
     @InjectMocks FeedbackGenerationService service;
 
@@ -135,10 +136,61 @@ class FeedbackGenerationServiceTest {
         Map<String, Object> approved = Map.of(
                 "stage", "initial", "flowSummary", "Approved feedback"
         );
-        when(ragClient.getApprovedResult(aiJobId)).thenReturn(approved);
+        String json = "{\"stage\":\"initial\",\"flowSummary\":\"Approved feedback\","
+                + "\"resultHash\":\"sha256:result\"}";
+        Map<String, Object> withHash = new java.util.LinkedHashMap<>(approved);
+        withHash.put("resultHash", "sha256:result");
+        when(ragClient.getApprovedResultRaw(aiJobId)).thenReturn(json);
+        when(ragClient.parseResponse(json)).thenReturn(withHash);
 
-        assertEquals(approved, service.fetchApprovedResult(feedbackId));
+        assertEquals(withHash, service.fetchApprovedResult(feedbackId));
         verify(ragClient, never()).getJobStatus(any());
+        verify(jobStore).captureApprovedResult(
+                feedbackId, aiJobId, json, "sha256:result");
+    }
+    @Test
+    void cachedApprovedResultAvoidsSecondGetThatCouldReturn409() {
+        AiRagJob stored = mock(AiRagJob.class);
+        when(stored.getJobId()).thenReturn(aiJobId);
+        String raw = "{\"resultHash\":\"sha256:cached\"}";
+        when(stored.getApprovedResultJson()).thenReturn(raw);
+        when(jobRepository.findById(feedbackId)).thenReturn(Optional.of(stored));
+        Map<String, Object> result = Map.of("resultHash", "sha256:cached");
+        when(ragClient.parseResponse(raw)).thenReturn(result);
+
+        assertEquals(result, service.fetchApprovedResult(feedbackId));
+        verify(ragClient, never()).getApprovedResultRaw(any());
         verifyNoInteractions(jobStore);
     }
+
+    @Test
+    void storeApprovedResultCapturesBeforeTransactionalPersistence() {
+        AiRagJob stored = mock(AiRagJob.class);
+        when(stored.getJobId()).thenReturn(aiJobId);
+        when(jobRepository.findById(feedbackId)).thenReturn(Optional.of(stored));
+        when(ragClient.getApprovedResultRaw(aiJobId)).thenReturn("{\"resultHash\":\"some-hash\"}");
+        when(ragClient.parseResponse(anyString())).thenReturn(Map.of("resultHash", "some-hash"));
+        when(approvedPersistence.persistCaptured(feedbackId)).thenReturn(true);
+
+        org.junit.jupiter.api.Assertions.assertTrue(service.storeApprovedResult(feedbackId));
+        var ordered = inOrder(jobStore, approvedPersistence);
+        ordered.verify(jobStore).captureApprovedResult(eq(feedbackId), eq(aiJobId),
+                anyString(), eq("some-hash"));
+        ordered.verify(approvedPersistence).persistCaptured(feedbackId);
+    }
+
+    @Test
+    void unparseableResponseIsStillCapturedBeforeThrowing() {
+        AiRagJob stored = mock(AiRagJob.class);
+        when(stored.getJobId()).thenReturn(aiJobId);
+        when(jobRepository.findById(feedbackId)).thenReturn(Optional.of(stored));
+        when(ragClient.getApprovedResultRaw(aiJobId)).thenReturn("{bad");
+        when(ragClient.parseResponse("{bad"))
+                .thenThrow(new IllegalArgumentException("invalid JSON"));
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> service.fetchApprovedResult(feedbackId));
+        verify(jobStore).captureApprovedResult(feedbackId, aiJobId, "{bad", null);
+    }
+
 }

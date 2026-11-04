@@ -113,7 +113,7 @@ public class ApprovedRagResultParser {
         if (items.isEmpty()) {
             throw new IllegalStateException("approved_result_items_empty");
         }
-        validateStageScopes(job.getStage(), items, allowedTargets);
+        validateStageScopes(job.getStage(), promptVersion, items, allowedTargets);
 
         List<ApprovedCitationWriter.Citation> citations = new ArrayList<>();
         Set<String> referenceIds = new HashSet<>();
@@ -155,23 +155,41 @@ public class ApprovedRagResultParser {
                 summary, insufficient, List.copyOf(items), List.copyOf(citations));
     }
 
-    private void validateStageScopes(String stage, List<Item> items, Set<UUID> targets) {
-        Set<AiFeedbackItem.FeedbackItemType> sessionTypes = "initial".equals(stage)
+    private void validateStageScopes(String stage, String promptVersion, List<Item> items,
+                                     Set<UUID> targets) {
+        // v2 responses use the newer type taxonomy. The approved demo/v1 output
+        // uses legacy types and does not contain item IDs or sortOrder fields.
+        boolean v2 = FeedbackItemRules.V2_PROMPT_VERSION.equals(promptVersion);
+        Set<AiFeedbackItem.FeedbackItemType> sessionTypes = v2 && "initial".equals(stage)
                 ? Set.of(AiFeedbackItem.FeedbackItemType.flow_summary,
                         AiFeedbackItem.FeedbackItemType.news_analysis,
                         AiFeedbackItem.FeedbackItemType.interpretation_limit)
                 : Set.of(AiFeedbackItem.FeedbackItemType.flow_summary,
                         AiFeedbackItem.FeedbackItemType.interpretation_limit);
-        Set<AiFeedbackItem.FeedbackItemType> targetTypes = "initial".equals(stage)
-                ? Set.of(AiFeedbackItem.FeedbackItemType.initial_market_impact,
-                        AiFeedbackItem.FeedbackItemType.initial_prediction_review,
-                        AiFeedbackItem.FeedbackItemType.initial_counter_scenario,
-                        AiFeedbackItem.FeedbackItemType.interpretation_limit)
-                : Set.of(AiFeedbackItem.FeedbackItemType.final_observed_flow,
-                        AiFeedbackItem.FeedbackItemType.final_market_explanation,
-                        AiFeedbackItem.FeedbackItemType.final_prediction_review,
-                        AiFeedbackItem.FeedbackItemType.final_takeaway,
-                        AiFeedbackItem.FeedbackItemType.interpretation_limit);
+        Set<AiFeedbackItem.FeedbackItemType> targetTypes;
+        if ("initial".equals(stage)) {
+            targetTypes = v2
+                    ? Set.of(AiFeedbackItem.FeedbackItemType.initial_market_impact,
+                            AiFeedbackItem.FeedbackItemType.initial_prediction_review,
+                            AiFeedbackItem.FeedbackItemType.initial_counter_scenario,
+                            AiFeedbackItem.FeedbackItemType.interpretation_limit)
+                    : Set.of(AiFeedbackItem.FeedbackItemType.initial_uncertainty,
+                            AiFeedbackItem.FeedbackItemType.initial_counter_scenario,
+                            AiFeedbackItem.FeedbackItemType.initial_factor_to_review,
+                            AiFeedbackItem.FeedbackItemType.interpretation_limit);
+        } else {
+            targetTypes = v2
+                    ? Set.of(AiFeedbackItem.FeedbackItemType.final_observed_flow,
+                            AiFeedbackItem.FeedbackItemType.final_market_explanation,
+                            AiFeedbackItem.FeedbackItemType.final_prediction_review,
+                            AiFeedbackItem.FeedbackItemType.final_takeaway,
+                            AiFeedbackItem.FeedbackItemType.interpretation_limit)
+                    : Set.of(AiFeedbackItem.FeedbackItemType.final_observed_flow,
+                            AiFeedbackItem.FeedbackItemType.final_co_observed_factors,
+                            AiFeedbackItem.FeedbackItemType.final_reflection_improvement,
+                            AiFeedbackItem.FeedbackItemType.final_next_hypothesis,
+                            AiFeedbackItem.FeedbackItemType.interpretation_limit);
+        }
         Map<String, Set<AiFeedbackItem.FeedbackItemType>> byScope = new LinkedHashMap<>();
         for (Item item : items) {
             Set<AiFeedbackItem.FeedbackItemType> expected =
@@ -199,11 +217,15 @@ public class ApprovedRagResultParser {
                            List<Item> result) {
         Set<Integer> orders = new HashSet<>();
         List<Item> scoped = new ArrayList<>();
-        for (Object value : values) {
-            Map<String, Object> item = object(value, "item");
-            String id = requiredString(item, "id");
-            if (!seenIds.add(id)) {
-                throw new IllegalStateException("approved_item_duplicate_id");
+        for (int index = 0; index < values.size(); index++) {
+            Map<String, Object> item = object(values.get(index), "item");
+            // An optional AI item ID is validated if supplied, but the approved
+            // demo/v1 protocol has no item IDs. DB PKs are generated on insert.
+            if (item.containsKey("id")) {
+                String id = requiredString(item, "id");
+                if (!seenIds.add(id)) {
+                    throw new IllegalStateException("approved_item_duplicate_id");
+                }
             }
             String type = requiredString(item, "type");
             AiFeedbackItem.FeedbackItemType enumType;
@@ -213,10 +235,18 @@ public class ApprovedRagResultParser {
                 throw new IllegalStateException("approved_item_unknown_type", ex);
             }
             String content = requiredString(item, "content");
-            Object orderValue = item.get("sortOrder");
-            if (!(orderValue instanceof Number number) || number.intValue() < 0
-                    || number.doubleValue() != number.intValue()
-                    || !orders.add(number.intValue())) {
+            // A missing sortOrder uses the original JSON array position within
+            // the session/target scope. Do not modify the captured JSON/hash.
+            int sourceOrder = index;
+            if (item.containsKey("sortOrder")) {
+                Object orderValue = item.get("sortOrder");
+                if (!(orderValue instanceof Number number) || number.intValue() < 0
+                        || number.doubleValue() != number.intValue()) {
+                    throw new IllegalStateException("approved_item_sort_order_invalid");
+                }
+                sourceOrder = number.intValue();
+            }
+            if (!orders.add(sourceOrder)) {
                 throw new IllegalStateException("approved_item_sort_order_invalid");
             }
             List<String> links = new ArrayList<>();
@@ -227,7 +257,7 @@ public class ApprovedRagResultParser {
                 }
                 links.add(ref);
             }
-            scoped.add(new Item(target, enumType, content, number.intValue(),
+            scoped.add(new Item(target, enumType, content, sourceOrder,
                     List.copyOf(links)));
         }
         scoped.sort(Comparator.comparingInt(Item::sourceSortOrder));

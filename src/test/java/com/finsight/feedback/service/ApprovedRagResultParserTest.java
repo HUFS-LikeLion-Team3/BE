@@ -67,7 +67,7 @@ class ApprovedRagResultParserTest {
         response.put("beInputHash", inputHash);
         response.put("status", "ready");
         response.put("modelVersion", "local-demo");
-        response.put("promptVersion", "feedback-integration-v1");
+        response.put("promptVersion", FeedbackItemRules.V2_PROMPT_VERSION);
         response.put("policyVersion", "feedback-policy-p0-v1");
         response.put("generatedAt", "2026-11-03T10:00:00+09:00");
         response.put("resultHash", digest(output));
@@ -136,6 +136,45 @@ class ApprovedRagResultParserTest {
         assertEquals(List.of("R-A", "R-B"), parsed.items().get(1).referenceIds());
         assertEquals(List.of("R-B"), parsed.items().get(2).referenceIds());
         assertEquals(OffsetDateTime.parse("2026-11-03T10:00:00+09:00"), parsed.generatedAt());
+    }
+
+    @Test
+    void approvedDemoV1ItemsWithoutIdsOrSortOrdersKeepOrderTypesAndCitations() {
+        Map<String, Object> body = output();
+        body.put("sessionItems", List.of(
+                Map.of("type", "flow_summary", "content", "데모 요약", "referenceIds", List.of()),
+                Map.of("type", "interpretation_limit", "content", "데모 한계", "referenceIds", List.of("R-A", "R-B"))));
+        body.put("targetFeedbacks", List.of(Map.of(
+                "sessionTargetId", sessionTargetId.toString(),
+                "items", List.of(
+                        Map.of("type", "initial_uncertainty", "content", "불확실성", "referenceIds", List.of()),
+                        Map.of("type", "initial_counter_scenario", "content", "반대 시나리오", "referenceIds", List.of("R-B")),
+                        Map.of("type", "initial_factor_to_review", "content", "검토 변수", "referenceIds", List.of())))));
+        Map<String, Object> response = response(body);
+        response.put("promptVersion", "feedback-integration-v1");
+        ApprovedRagResultParser.Parsed parsed = parser.parse(job(response), feedback());
+        assertEquals(5, parsed.items().size());
+        assertEquals(List.of(0, 1, 0, 1, 2),
+                parsed.items().stream().map(ApprovedRagResultParser.Item::sourceSortOrder).toList());
+        assertEquals(List.of("flow_summary", "interpretation_limit", "initial_uncertainty",
+                "initial_counter_scenario", "initial_factor_to_review"),
+                parsed.items().stream().map(item -> item.type().name()).toList());
+        assertEquals(List.of("R-A", "R-B"), parsed.items().get(1).referenceIds());
+        assertEquals(2, parsed.citations().size());
+        assertEquals(chunkId, parsed.citations().get(0).chunkId());
+        assertEquals(chunkId, parsed.citations().get(1).chunkId());
+        assertNotEquals(parsed.citations().get(0).referenceId(), parsed.citations().get(1).referenceId());
+    }
+
+    @Test
+    void explicitNullItemIdIsRejectedEvenWhenIdIsOptional() {
+        Map<String, Object> body = output();
+        Map<String, Object> broken = new LinkedHashMap<>(Map.of("id", "session-1", "type", "flow_summary",
+                "content", "한글 본문", "sortOrder", 0, "referenceIds", List.of()));
+        broken.put("id", null);
+        body.put("sessionItems", List.of(broken, ((List<?>)body.get("sessionItems")).get(1)));
+        Map<String, Object> response = response(body);
+        assertThrows(IllegalStateException.class, () -> parser.parse(job(response), feedback()));
     }
 
     @Test

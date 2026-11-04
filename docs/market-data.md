@@ -1,5 +1,28 @@
 # 시장 데이터 연동
 
+## 결과 수집 운영 설정
+
+market-data 프로필에서 자동 수집은 `OUTCOME_COLLECTION_ENABLED` 환경변수로 명시적으로 활성화한다.
+기본값은 false다. 실제 DB와 조회 권한을 확인한 PowerShell에서 아래와 같이 재시작한다.
+
+```powershell
+$env:OUTCOME_COLLECTION_ENABLED = 'true'
+.\gradlew.bat bootRun --args='--spring.profiles.active=market-data'
+```
+
+이 설정은 8번 스케줄러를 활성화하므로 제출된 live 세션의 기준값·관측 데이터가 저장될 수 있다.
+4번 referenceMarket 조회 자체는 baseline을 생성하거나 변경하지 않는다.
+
+TDFX/TDGD/TDWT의 최초 T0 후보는 주말을 제외하지 않으며, 실제 게시된 확정 일일 값을 날짜 순서로 확인한다.
+USTY는 평일을 시작 후보로 사용하고 실제 재무부 관측이 없는 공휴일은 값으로 채우지 않는다.
+T1/T5/T20 수집은 실제 게시된 관측을 센다. 금·환율·원유의 예정일·기한 추정값도 달력일로 계산한다.
+T0 저장은 기준 시각이 제출 시각보다 엄격히 늦은 경우에만 허용한다.
+
+운영 DB에 기존 샘플이 남아 있으면 [샘플 비활성화 SQL](migrations/market-targets-hide-samples.sql)을
+해당 DB에서 실행한다. 이 스크립트는 활성 시장 목록에서 두 샘플만 제외하며 반복 실행할 수 있다.
+기존 뉴스 후보와 세션 ID 참조는 보존한다. 샘플 뉴스 후보를 실제 운영 추천으로 사용하지 말고
+실제 marketTargetId로 운영 뉴스 후보를 별도 구성해야 한다. SQL은 이번 작업에서 운영 DB에 실행하지 않았다.
+
 시장 대상 상세는 `ReferenceMarketProvider → LiveReferenceMarketProvider → MarketDataService → MarketDataProvider → TwelveDataClient`
 경로로 실제 외부 API를 조회한다. 항상 unavailable을 반환하던 기본 Provider는 제거했다.
 DB 테이블을 추가하거나 세션 T0·시장 관측을 저장하지 않는다.

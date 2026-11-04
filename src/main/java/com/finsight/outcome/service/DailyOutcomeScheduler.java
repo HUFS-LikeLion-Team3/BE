@@ -189,7 +189,7 @@ public class DailyOutcomeScheduler {
                     sessionId,
                     targetId,
                     expected,
-                    addWeekdays(expected, RETRY_PUBLISHED_SESSIONS)
+                    estimateDate(market, expected, RETRY_PUBLISHED_SESSIONS)
             );
 
             baseline = baselineRepository
@@ -236,13 +236,14 @@ public class DailyOutcomeScheduler {
             Map<Integer, LocalDate> deadlines = new HashMap<>();
 
             for (int horizon : HORIZONS) {
-                LocalDate estimated = addWeekdays(start, horizon);
+                LocalDate estimated = estimateDate(market, start, horizon);
 
                 expected.put(horizon, estimated);
 
                 deadlines.put(
                         horizon,
-                        addWeekdays(
+                        estimateDate(
+                                market,
                                 estimated,
                                 RETRY_PUBLISHED_SESSIONS
                         )
@@ -396,7 +397,9 @@ public class DailyOutcomeScheduler {
 
             int delay = Math.max(
                     0,
-                    weekdaysBetween(expected, actual)
+                    "USTY".equals(market.getCalendarCode())
+                            ? weekdaysBetween(expected, actual)
+                            : (int) java.time.temporal.ChronoUnit.DAYS.between(expected, actual)
             );
 
             MarketDataProvider.Status status =
@@ -497,7 +500,7 @@ public class DailyOutcomeScheduler {
                 .contains("missing_requested_observation");
     }
 
-    private LocalDate firstDate(
+    LocalDate firstDate(
             MarketTarget market,
             OffsetDateTime submittedAt
     ) {
@@ -505,12 +508,16 @@ public class DailyOutcomeScheduler {
                 .atZoneSameInstant(ZoneId.of(market.getTimezone()))
                 .toLocalDate();
 
-        while (!isWeekday(date)
+        while (("USTY".equals(market.getCalendarCode()) && !isWeekday(date))
                 || !referenceAt(market, date).isAfter(submittedAt)) {
             date = date.plusDays(1);
         }
 
         return date;
+    }
+
+    LocalDate estimateDate(MarketTarget market, LocalDate start, int count) {
+        return "USTY".equals(market.getCalendarCode()) ? addWeekdays(start, count) : start.plusDays(count);
     }
 
     private OffsetDateTime referenceAt(

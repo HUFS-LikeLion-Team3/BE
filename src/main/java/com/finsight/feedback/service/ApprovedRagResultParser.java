@@ -190,7 +190,7 @@ public class ApprovedRagResultParser {
                             AiFeedbackItem.FeedbackItemType.final_next_hypothesis,
                             AiFeedbackItem.FeedbackItemType.interpretation_limit);
         }
-        Map<String, Set<AiFeedbackItem.FeedbackItemType>> byScope = new LinkedHashMap<>();
+        Map<String, Set<String>> byScope = new LinkedHashMap<>();
         for (Item item : items) {
             Set<AiFeedbackItem.FeedbackItemType> expected =
                     item.sessionTargetId() == null ? sessionTypes : targetTypes;
@@ -198,12 +198,14 @@ public class ApprovedRagResultParser {
                 throw new IllegalStateException("approved_item_invalid_type_or_scope");
             }
             String scope = item.sessionTargetId() == null ? "session" : item.sessionTargetId().toString();
-            if (!byScope.computeIfAbsent(scope, ignored -> new HashSet<>()).add(item.type())) {
+            if (!byScope.computeIfAbsent(scope, ignored -> new HashSet<>()).add(item.type().name())) {
                 throw new IllegalStateException("approved_item_duplicate_type_in_scope");
             }
         }
+        FeedbackItemRules.validateRequiredTypes(
+                AiFeedback.FeedbackStage.fromValue(stage), promptVersion, targets, byScope);
         if (!byScope.getOrDefault("session", Set.of())
-                .contains(AiFeedbackItem.FeedbackItemType.flow_summary)) {
+                .contains("flow_summary")) {
             throw new IllegalStateException("approved_flow_summary_missing");
         }
         for (UUID targetId : targets) {

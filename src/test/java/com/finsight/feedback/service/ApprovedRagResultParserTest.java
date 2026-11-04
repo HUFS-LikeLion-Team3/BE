@@ -25,7 +25,6 @@ class ApprovedRagResultParserTest {
     private final UUID sessionTargetId = UUID.randomUUID();
     private final UUID documentId = UUID.randomUUID();
     private final UUID chunkId = UUID.randomUUID();
-    private final String beRequestId = "feedback:initial:" + sessionId + ":v1";
     private final String packageId = "sha256:" + "a".repeat(64);
     private final String inputHash = "b".repeat(64);
     private final JsonMapper mapper = JsonMapper.builder().build();
@@ -51,7 +50,10 @@ class ApprovedRagResultParserTest {
                 item("session-2", "news_analysis", 1, List.of("R-A", "R-B"))));
         out.put("targetFeedbacks", List.of(Map.of(
                 "sessionTargetId", sessionTargetId.toString(),
-                "items", List.of(item("target-1", "initial_market_impact", 0, List.of("R-B"))))));
+                "items", List.of(
+                        item("target-1", "initial_market_impact", 0, List.of("R-B")),
+                        item("target-2", "initial_prediction_review", 1, List.of()),
+                        item("target-3", "initial_counter_scenario", 2, List.of())))));
         out.put("references", List.of(a, b));
         return out;
     }
@@ -61,8 +63,8 @@ class ApprovedRagResultParserTest {
         response.put("jobId", jobId.toString());
         response.put("feedbackId", feedbackId.toString());
         response.put("sessionId", sessionId.toString());
-        response.put("stage", "initial");
-        response.put("beRequestId", beRequestId);
+        response.put("stage", output.get("stage"));
+        response.put("beRequestId", "feedback:" + output.get("stage") + ":" + sessionId + ":v1");
         response.put("packageId", packageId);
         response.put("beInputHash", inputHash);
         response.put("status", "ready");
@@ -97,15 +99,15 @@ class ApprovedRagResultParserTest {
         AiRagJob job = mock(AiRagJob.class);
         when(job.getFeedbackId()).thenReturn(feedbackId);
         when(job.getSessionId()).thenReturn(sessionId);
-        when(job.getBeRequestId()).thenReturn(beRequestId);
-        when(job.getStage()).thenReturn("initial");
+        when(job.getBeRequestId()).thenReturn((String) response.get("beRequestId"));
+        when(job.getStage()).thenReturn((String) response.get("stage"));
         when(job.getJobId()).thenReturn(jobId);
         when(job.getPackageId()).thenReturn(packageId);
         when(job.getResultHash()).thenReturn((String) response.get("resultHash"));
         when(job.getApprovedResultJson()).thenReturn(mapper.writeValueAsString(response));
         when(job.getRequestJson()).thenReturn(mapper.writeValueAsString(Map.of(
                 "feedbackId", feedbackId.toString(),
-                "beRequestId", beRequestId,
+                "beRequestId", (String) response.get("beRequestId"),
                 "packageId", packageId,
                 "beInputHash", inputHash,
                 "bindings", Map.of(sessionTargetId.toString(), UUID.randomUUID().toString()))));
@@ -113,11 +115,16 @@ class ApprovedRagResultParserTest {
     }
 
     private AiFeedback feedback() {
+        return feedback(AiFeedback.FeedbackStage.INITIAL);
+    }
+
+    private AiFeedback feedback(AiFeedback.FeedbackStage stage) {
         AiFeedback feedback = mock(AiFeedback.class);
         when(feedback.getId()).thenReturn(feedbackId);
         when(feedback.getLearningSessionId()).thenReturn(sessionId);
-        when(feedback.getFeedbackStage()).thenReturn(AiFeedback.FeedbackStage.INITIAL);
-        when(feedback.getRequestId()).thenReturn(beRequestId);
+        when(feedback.getFeedbackStage()).thenReturn(stage);
+        when(feedback.getRequestId()).thenReturn(
+                "feedback:" + stage.getValue() + ":" + sessionId + ":v1");
         return feedback;
     }
 
@@ -125,7 +132,7 @@ class ApprovedRagResultParserTest {
     void twoDifferentCitationsForOneChunkRemainDistinctAndLongExcerptSurvives() {
         Map<String, Object> response = response(output());
         ApprovedRagResultParser.Parsed parsed = parser.parse(job(response), feedback());
-        assertEquals(3, parsed.items().size());
+        assertEquals(5, parsed.items().size());
         assertEquals(2, parsed.citations().size());
         assertEquals(chunkId, parsed.citations().get(0).chunkId());
         assertEquals(chunkId, parsed.citations().get(1).chunkId());
@@ -200,4 +207,90 @@ class ApprovedRagResultParserTest {
         Map<String, Object> response = response(output);
         assertThrows(IllegalStateException.class, () -> parser.parse(job(response), feedback()));
     }
+    private Map<String, Object> finalOutput() {
+        Map<String, Object> body = output();
+        body.put("stage", "final");
+        body.put("sessionItems", List.of(item("session-final-1", "flow_summary", 0, List.of())));
+        body.put("targetFeedbacks", List.of(Map.of(
+                "sessionTargetId", sessionTargetId.toString(),
+                "items", List.of(
+                        item("final-1", "final_observed_flow", 0, List.of("R-A")),
+                        item("final-2", "final_market_explanation", 1, List.of()),
+                        item("final-3", "final_prediction_review", 2, List.of("R-B"))))));
+        return body;
+    }
+
+    @Test
+    void v2InitialCompleteRequiredItemsAreAccepted() {
+        ApprovedRagResultParser.Parsed result = parser.parse(
+                job(response(output())), feedback());
+        assertEquals(5, result.items().size());
+    }
+
+    @Test
+    void v2InitialRejectsMissingRequiredSessionItem() {
+        Map<String, Object> body = output();
+        body.put("sessionItems", List.of(item("session-1", "flow_summary", 0, List.of())));
+        Map<String, Object> result = response(body);
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> parser.parse(job(result), feedback()));
+        assertTrue(error.getMessage().contains("news_analysis"));
+    }
+
+    @Test
+    void v2InitialRejectsEachMissingRequiredTargetItem() {
+        for (String missing : List.of("initial_market_impact",
+                "initial_prediction_review", "initial_counter_scenario")) {
+            Map<String, Object> body = output();
+            body.put("targetFeedbacks", List.of(Map.of(
+                    "sessionTargetId", sessionTargetId.toString(),
+                    "items", List.of(
+                            item("t1", "initial_market_impact", 0, List.of()),
+                            item("t2", "initial_prediction_review", 1, List.of()),
+                            item("t3", "initial_counter_scenario", 2, List.of()))
+                            .stream().filter(i -> !missing.equals(i.get("type"))).toList())));
+            Map<String, Object> result = response(body);
+            IllegalStateException error = assertThrows(IllegalStateException.class,
+                    () -> parser.parse(job(result), feedback()));
+            assertTrue(error.getMessage().contains(missing));
+        }
+    }
+
+    @Test
+    void v2FinalCompleteRequiredItemsAreAccepted() {
+        Map<String, Object> result = response(finalOutput());
+        ApprovedRagResultParser.Parsed parsed = parser.parse(job(result),
+                feedback(AiFeedback.FeedbackStage.FINAL));
+        assertEquals(4, parsed.items().size());
+    }
+
+    @Test
+    void v2FinalRejectsMissingRequiredSessionItem() {
+        Map<String, Object> body = finalOutput();
+        body.put("sessionItems", List.of());
+        Map<String, Object> result = response(body);
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> parser.parse(job(result), feedback(AiFeedback.FeedbackStage.FINAL)));
+        assertTrue(error.getMessage().contains("flow_summary"));
+    }
+
+    @Test
+    void v2FinalRejectsEachMissingRequiredTargetItem() {
+        for (String missing : List.of("final_observed_flow",
+                "final_market_explanation", "final_prediction_review")) {
+            Map<String, Object> body = finalOutput();
+            body.put("targetFeedbacks", List.of(Map.of(
+                    "sessionTargetId", sessionTargetId.toString(),
+                    "items", List.of(
+                            item("f1", "final_observed_flow", 0, List.of()),
+                            item("f2", "final_market_explanation", 1, List.of()),
+                            item("f3", "final_prediction_review", 2, List.of()))
+                            .stream().filter(i -> !missing.equals(i.get("type"))).toList())));
+            Map<String, Object> result = response(body);
+            IllegalStateException error = assertThrows(IllegalStateException.class,
+                    () -> parser.parse(job(result), feedback(AiFeedback.FeedbackStage.FINAL)));
+            assertTrue(error.getMessage().contains(missing));
+        }
+    }
+
 }

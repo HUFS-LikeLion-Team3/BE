@@ -156,7 +156,7 @@ public class OutcomeCollectionService {
             }
 
             if (close.asOfAt() == null
-                    || close.asOfAt().isBefore(
+                    || !close.asOfAt().isAfter(
                     session.getSubmittedAt())) {
                 throw new IllegalStateException(
                         "Baseline must occur after submission"

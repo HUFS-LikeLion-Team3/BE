@@ -22,7 +22,8 @@ public class UserService {
     private final UserInterestRepository interests;
 
     // Registered service topics; the ERD stores keys directly without a topic table.
-    private static final Set<String> TOPIC_KEYS = Set.of("semiconductor", "rate");
+    private static final Set<String> TOPIC_KEYS = Set.of(
+            "rate", "exchange_rate", "semiconductor", "energy", "price", "employment");
 
     @Transactional
     public UserInterestsRequest replaceInterests(UUID userId, UserInterestsRequest request) {

@@ -56,30 +56,37 @@ public class FeedbackGenerationPersistenceService {
                         )
                 );
 
-        var existing =
-                feedbackRepository
-                        .findByLearningSessionIdAndFeedbackStageAndVersion(
-                                sessionId,
-                                stage,
-                                version
-                        );
+        var existing = feedbackRepository
+                .findByLearningSessionIdAndFeedbackStageAndVersion(
+                        sessionId,
+                        stage,
+                        version
+                );
 
         if (existing.isPresent()) {
-            return existing.get().getId();
+            AiFeedback previous = existing.get();
+
+            if (!requestId.equals(previous.getRequestId())) {
+                throw new IllegalStateException(
+                        "feedback_or_session_stage_conflict"
+                );
+            }
+
+            // Preserve the first request's version, policy and cutoff.
+            return previous.getId();
         }
 
-        AiFeedback feedback =
-                feedbackRepository.save(
-                        AiFeedback.create(
-                                sessionId,
-                                stage,
-                                version,
-                                requestId,
-                                promptVersion,
-                                policyVersion,
-                                cutoff
-                        )
-                );
+        AiFeedback feedback = feedbackRepository.save(
+                AiFeedback.create(
+                        sessionId,
+                        stage,
+                        version,
+                        requestId,
+                        promptVersion,
+                        policyVersion,
+                        cutoff
+                )
+        );
 
         return feedback.getId();
     }
@@ -89,8 +96,7 @@ public class FeedbackGenerationPersistenceService {
             UUID feedbackId,
             FeedbackGenerationInput input
     ) {
-        var previous =
-                snapshotRepository.findByAiFeedbackId(feedbackId);
+        var previous = snapshotRepository.findByAiFeedbackId(feedbackId);
 
         if (previous.isPresent()) {
             if (!previous.get()
@@ -119,13 +125,11 @@ public class FeedbackGenerationPersistenceService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean claim(UUID feedbackId) {
-        AiFeedback feedback =
-                feedbackRepository
-                        .findByIdForUpdate(feedbackId)
-                        .orElseThrow();
+        AiFeedback feedback = feedbackRepository
+                .findByIdForUpdate(feedbackId)
+                .orElseThrow();
 
-        if (feedback.getStatus()
-                != AiFeedback.FeedbackStatus.pending) {
+        if (feedback.getStatus() != AiFeedback.FeedbackStatus.pending) {
             return false;
         }
 
@@ -140,18 +144,15 @@ public class FeedbackGenerationPersistenceService {
             FeedbackGenerationInput input,
             FeedbackModelClient.Result result
     ) {
-        AiFeedback feedback =
-                feedbackRepository
-                        .findByIdForUpdate(feedbackId)
-                        .orElseThrow();
+        AiFeedback feedback = feedbackRepository
+                .findByIdForUpdate(feedbackId)
+                .orElseThrow();
 
-        if (feedback.getStatus()
-                == AiFeedback.FeedbackStatus.ready) {
+        if (feedback.getStatus() == AiFeedback.FeedbackStatus.ready) {
             return;
         }
 
-        if (feedback.getStatus()
-                != AiFeedback.FeedbackStatus.generating) {
+        if (feedback.getStatus() != AiFeedback.FeedbackStatus.generating) {
             throw new IllegalStateException(
                     "Feedback is not generating."
             );
@@ -208,22 +209,19 @@ public class FeedbackGenerationPersistenceService {
             UUID targetId =
                     resultItem.sessionTargetId() == null
                             ? null
-                            : UUID.fromString(
-                            resultItem.sessionTargetId()
-                    );
+                            : UUID.fromString(resultItem.sessionTargetId());
 
-            AiFeedbackItem item =
-                    itemRepository.save(
-                            AiFeedbackItem.create(
-                                    feedbackId,
-                                    targetId,
-                                    AiFeedbackItem.FeedbackItemType
-                                            .valueOf(resultItem.type()),
-                                    resultItem.content(),
-                                    resultItem.variablesToCheck(),
-                                    ++storageSortOrder
-                            )
-                    );
+            AiFeedbackItem item = itemRepository.save(
+                    AiFeedbackItem.create(
+                            feedbackId,
+                            targetId,
+                            AiFeedbackItem.FeedbackItemType
+                                    .valueOf(resultItem.type()),
+                            resultItem.content(),
+                            resultItem.variablesToCheck(),
+                            ++storageSortOrder
+                    )
+            );
 
             if (resultItem.referenceChunkIds() == null) {
                 continue;
@@ -231,8 +229,7 @@ public class FeedbackGenerationPersistenceService {
 
             Set<UUID> linked = new HashSet<>();
 
-            for (String rawChunkId :
-                    resultItem.referenceChunkIds()) {
+            for (String rawChunkId : resultItem.referenceChunkIds()) {
                 UUID chunkId = UUID.fromString(rawChunkId);
 
                 if (!linked.add(chunkId)) {
@@ -244,8 +241,7 @@ public class FeedbackGenerationPersistenceService {
 
                 if (reference == null) {
                     throw new IllegalStateException(
-                            "AI referenced an unavailable chunk: "
-                                    + chunkId
+                            "AI referenced an unavailable chunk: " + chunkId
                     );
                 }
 
@@ -271,35 +267,26 @@ public class FeedbackGenerationPersistenceService {
             FeedbackGenerationInput input,
             List<FeedbackModelClient.Item> items
     ) {
-        Map<UUID, String> usageByChunk =
-                new LinkedHashMap<>();
+        Map<UUID, String> usageByChunk = new LinkedHashMap<>();
 
         for (FeedbackModelClient.Item item : items) {
             if (item.referenceChunkIds() == null) {
                 continue;
             }
 
-            for (String rawChunkId :
-                    item.referenceChunkIds()) {
+            for (String rawChunkId : item.referenceChunkIds()) {
                 UUID chunkId = UUID.fromString(rawChunkId);
 
-                usageByChunk.putIfAbsent(
-                        chunkId,
-                        item.type()
-                );
+                usageByChunk.putIfAbsent(chunkId, item.type());
             }
         }
 
-        Map<UUID, AiFeedbackReference> saved =
-                new HashMap<>();
-
+        Map<UUID, AiFeedbackReference> saved = new HashMap<>();
         int sortOrder = 1;
 
-        for (Map.Entry<UUID, String> entry :
-                usageByChunk.entrySet()) {
+        for (Map.Entry<UUID, String> entry : usageByChunk.entrySet()) {
             FeedbackGenerationInput.EvidenceChunk evidence =
-                    input.evidenceChunks()
-                            .get(entry.getKey());
+                    input.evidenceChunks().get(entry.getKey());
 
             if (evidence == null) {
                 throw new IllegalStateException(
@@ -307,24 +294,19 @@ public class FeedbackGenerationPersistenceService {
                 );
             }
 
-            AiFeedbackReference reference =
-                    referenceRepository.save(
-                            AiFeedbackReference.create(
-                                    feedbackId,
-                                    evidence.sourceDocumentId(),
-                                    evidence.chunkId(),
-                                    "근거 " + sortOrder,
-                                    excerpt(evidence.content()),
-                                    entry.getValue(),
-                                    sortOrder
-                            )
-                    );
-
-            saved.put(
-                    evidence.chunkId(),
-                    reference
+            AiFeedbackReference reference = referenceRepository.save(
+                    AiFeedbackReference.create(
+                            feedbackId,
+                            evidence.sourceDocumentId(),
+                            evidence.chunkId(),
+                            "근거 " + sortOrder,
+                            excerpt(evidence.content()),
+                            entry.getValue(),
+                            sortOrder
+                    )
             );
 
+            saved.put(evidence.chunkId(), reference);
             sortOrder++;
         }
 

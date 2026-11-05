@@ -1,10 +1,14 @@
+
 package com.finsight.feedback.event;
 
 import com.finsight.feedback.service.FeedbackGenerationService;
 import com.finsight.prediction.event.PredictionSubmittedEvent;
 import com.finsight.reflection.event.FinalReflectionSubmittedEvent;
+
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
@@ -12,6 +16,12 @@ import org.springframework.transaction.event.TransactionalEventListener;
 
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(
+        prefix = "finsight.ai.freeze-on-submit",
+        name = "enabled",
+        havingValue = "false",
+        matchIfMissing = true
+)
 public class FeedbackGenerationEventListener {
 
     private final FeedbackGenerationService feedbackGenerationService;

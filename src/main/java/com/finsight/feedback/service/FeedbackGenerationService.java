@@ -32,6 +32,7 @@ public class FeedbackGenerationService {
     private final AiFeedbackInputSnapshotRepository snapshotRepository;
     private final AiRagJobRepository jobRepository;
     private final AiRagJobStore jobStore;
+    private final AiRagDispatchLeaseService dispatchLease;
     private final AiRagContractMapper contractMapper;
     private final AiRagJobClient ragClient;
     private final ApprovedFeedbackPersistenceService approvedPersistence;
@@ -178,8 +179,7 @@ public class FeedbackGenerationService {
                 return;
             }
 
-            persistence.claim(feedbackId);
-            submitFrozen(feedbackId);
+            dispatchFrozenIfOwned(feedbackId);
 
         } catch (Exception ex) {
             handlePreparationFailure(
@@ -280,8 +280,7 @@ public class FeedbackGenerationService {
                 return;
             }
 
-            persistence.claim(feedbackId);
-            submitFrozen(feedbackId);
+            dispatchFrozenIfOwned(feedbackId);
 
         } catch (Exception ex) {
             handlePreparationFailure(feedbackId, null, null, ex);
@@ -374,6 +373,26 @@ public class FeedbackGenerationService {
                 .findBySessionIdAndStage(sessionId, "initial")
                 .map(AiRagJob::getJobId)
                 .orElse(null);
+    }
+
+    /** A durable lease excludes concurrent BE instances without holding a DB
+     * transaction open while the external AI HTTP request is in flight. */
+    private void dispatchFrozenIfOwned(UUID feedbackId) {
+        UUID owner = dispatchLease.tryClaim(feedbackId);
+        if (owner == null) {
+            return;
+        }
+        try {
+            submitFrozen(feedbackId);
+        } finally {
+            // A crash leaves the lease for restart recovery; ordinary failures
+            // release it so the next scheduled scan can query the same request.
+            try {
+                dispatchLease.release(feedbackId, owner);
+            } catch (RuntimeException ex) {
+                log.warn("Dispatch lease release deferred. feedbackId={}", feedbackId, ex);
+            }
+        }
     }
 
     private void submitFrozen(UUID feedbackId) {

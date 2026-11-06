@@ -32,6 +32,7 @@ class FeedbackGenerationServiceIdempotencyTest {
     @Mock AiFeedbackInputSnapshotRepository snapshotRepository;
     @Mock AiRagJobRepository jobRepository;
     @Mock AiRagJobStore jobStore;
+    @Mock AiRagDispatchLeaseService dispatchLease;
     @Mock AiRagContractMapper contractMapper;
     @Mock AiRagJobClient ragClient;
     @Mock ApprovedFeedbackPersistenceService approvedPersistence;
@@ -111,6 +112,7 @@ class FeedbackGenerationServiceIdempotencyTest {
     @Test
     void existingFrozenJobIsRecoveredByRequestIdWithoutRebuildingInput() {
         givenPreparedGeneratingFeedback();
+        when(dispatchLease.tryClaim(feedbackId)).thenReturn(UUID.randomUUID());
 
         // Mock 객체를 먼저 생성하여 중첩 스터빙 방지
         AiRagJob existingJob = frozenJob(null);
@@ -142,6 +144,7 @@ class FeedbackGenerationServiceIdempotencyTest {
     @Test
     void onlyHttp404AllowsRepostOfExactStoredJson() {
         givenPreparedGeneratingFeedback();
+        when(dispatchLease.tryClaim(feedbackId)).thenReturn(UUID.randomUUID());
 
         // Mock 객체를 먼저 생성하여 중첩 스터빙 방지
         AiRagJob existingJob = frozenJob(null);
@@ -179,6 +182,7 @@ class FeedbackGenerationServiceIdempotencyTest {
     @Test
     void temporaryProviderFailureNeverMarksExistingGeneratingAsFailed() {
         givenPreparedGeneratingFeedback();
+        when(dispatchLease.tryClaim(feedbackId)).thenReturn(UUID.randomUUID());
 
         // Mock 객체를 먼저 생성하여 중첩 스터빙 방지
         AiRagJob existingJob = frozenJob(null);
@@ -202,6 +206,23 @@ class FeedbackGenerationServiceIdempotencyTest {
         verify(jobStore, never()).uncertain(any(), any());
         verify(persistence, never()).fail(any(), any());
         verify(ragClient, never()).submitFrozenJob(anyString());
+    }
+
+    @Test
+    void anotherWorkerWithActiveLeaseCannotSendOrRegenerate() {
+        givenPreparedGeneratingFeedback();
+        // Nested Mockito stubbing is invalid: construct the mock before when(...).
+        AiRagJob existingJob = frozenJob(null);
+        when(jobRepository.findById(feedbackId))
+                .thenReturn(Optional.of(existingJob));
+        // An active owner is holding the row-level DB-backed lease.
+        when(dispatchLease.tryClaim(feedbackId)).thenReturn(null);
+
+        service.generateInitial(sessionId, submittedAt);
+
+        verifyNoInteractions(ragClient, initialBuilder, finalBuilder, jobStore);
+        verify(dispatchLease, never()).release(any(), any());
+        verify(persistence, never()).fail(any(), any());
     }
 
     @Test

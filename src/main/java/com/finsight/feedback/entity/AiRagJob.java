@@ -6,6 +6,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.OffsetDateTime;
+import java.time.Duration;
 import java.util.UUID;
 
 @Entity
@@ -59,6 +60,14 @@ public class AiRagJob {
 
     @Column(name = "job_id", unique = true)
     private UUID jobId;
+
+    // A durable, expiring lease allows another BE process to recover after a crash.
+    // The lease never changes the immutable frozen request body.
+    @Column(name = "dispatch_owner", length = 36)
+    private String dispatchOwner;
+
+    @Column(name = "dispatch_lease_until")
+    private OffsetDateTime dispatchLeaseUntil;
 
     @Column(name = "rag_snapshot_hash", length = 64)
     private String ragSnapshotHash;
@@ -163,6 +172,41 @@ public class AiRagJob {
     }
 
     /**
+     * Only one worker may perform GET by beRequestId / POST for an unaccepted
+     * frozen job. Call under a database write lock, in a committed transaction.
+     * Expired leases are reclaimable after an instance crash.
+     */
+    public boolean claimDispatch(
+            UUID owner,
+            OffsetDateTime now,
+            Duration leaseDuration
+    ) {
+        if (owner == null || now == null || leaseDuration == null
+                || leaseDuration.isNegative() || leaseDuration.isZero()) {
+            throw new IllegalArgumentException("dispatch_lease_invalid");
+        }
+        if (jobId != null || requestJson == null || requestJson.isBlank()
+                || !"frozen".equals(state)) {
+            return false;
+        }
+        if (dispatchOwner != null && dispatchLeaseUntil != null
+                && dispatchLeaseUntil.isAfter(now)) {
+            return false;
+        }
+        dispatchOwner = owner.toString();
+        dispatchLeaseUntil = now.plus(leaseDuration);
+        return true;
+    }
+
+    /** An old worker must never release a newer worker's recovered lease. */
+    public void releaseDispatch(UUID owner) {
+        if (owner != null && owner.toString().equals(dispatchOwner)) {
+            dispatchOwner = null;
+            dispatchLeaseUntil = null;
+        }
+    }
+
+    /**
      * Duplicate receipts for the same AI job are idempotent.
      * An older receipt must not overwrite a newer status.
      */
@@ -192,6 +236,8 @@ public class AiRagJob {
         }
 
         this.jobId = jobId;
+        this.dispatchOwner = null;
+        this.dispatchLeaseUntil = null;
         this.aiStatus = aiStatus;
         this.state = "accepted";
         this.failureCode = null;
@@ -208,6 +254,8 @@ public class AiRagJob {
 
         this.state = "reconciliation_required";
         this.failureCode = code;
+        this.dispatchOwner = null;
+        this.dispatchLeaseUntil = null;
     }
 
     /**

@@ -52,6 +52,9 @@ class FeedbackGenerationServiceTest {
     AiRagJobStore jobStore;
 
     @Mock
+    AiRagDispatchLeaseService dispatchLease;
+
+    @Mock
     AiRagContractMapper contractMapper;
 
     @Mock
@@ -141,6 +144,7 @@ class FeedbackGenerationServiceTest {
 
         when(jobRepository.findById(feedbackId))
                 .thenReturn(Optional.of(job));
+        when(dispatchLease.tryClaim(feedbackId)).thenReturn(UUID.randomUUID());
 
         return job;
     }

@@ -67,6 +67,7 @@ class ApprovedRagResultParserTest {
         response.put("beRequestId", "feedback:" + output.get("stage") + ":" + sessionId + ":v1");
         response.put("packageId", packageId);
         response.put("beInputHash", inputHash);
+        response.put("ragSnapshotHash", "c".repeat(64));
         response.put("status", "ready");
         response.put("modelVersion", "local-demo");
         response.put("promptVersion", FeedbackItemRules.V2_PROMPT_VERSION);
@@ -104,6 +105,7 @@ class ApprovedRagResultParserTest {
         when(job.getJobId()).thenReturn(jobId);
         when(job.getPackageId()).thenReturn(packageId);
         when(job.getResultHash()).thenReturn((String) response.get("resultHash"));
+        when(job.getRagSnapshotHash()).thenReturn((String) response.get("ragSnapshotHash"));
         when(job.getApprovedResultJson()).thenReturn(mapper.writeValueAsString(response));
         when(job.getRequestJson()).thenReturn(mapper.writeValueAsString(Map.of(
                 "feedbackId", feedbackId.toString(),

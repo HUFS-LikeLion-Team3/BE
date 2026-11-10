@@ -41,6 +41,3 @@ finsight:
       enabled: ${AI_RAG_POLLING_ENABLED:false}
       interval-ms: ${AI_RAG_POLLING_INTERVAL_MS:5000}
       initial-delay-ms: ${AI_RAG_POLLING_INITIAL_DELAY_MS:5000}
-    openai:
-      api-key: ${OPENAI_API_KEY:}
-      model: ${OPENAI_MODEL:gpt-5.6}

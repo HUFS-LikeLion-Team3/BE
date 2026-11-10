@@ -41,3 +41,6 @@ out/
 .env.*
 *.log
 /local-db-backups/
+/ai-contracts-issue25.zip
+/finsight-issue25-source.zip
+/issue26-start.zip

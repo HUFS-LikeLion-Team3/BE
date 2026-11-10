@@ -16,6 +16,23 @@ public final class FeedbackItemRules {
     public static final String V2_PROMPT_VERSION =
             "news-market-explanation-v2.1";
 
+    public static final String V3_PROMPT_VERSION =
+            "news-market-judgment-v3";
+
+    public static final String V3_1_PROMPT_VERSION =
+            "news-market-judgment-v3.1";
+
+    public static final String V3_2_PROMPT_VERSION =
+            "news-market-judgment-v3.2";
+
+    private static final Set<String> V2_ITEM_CONTRACT_VERSIONS =
+            Set.of(
+                    V2_PROMPT_VERSION,
+                    V3_PROMPT_VERSION,
+                    V3_1_PROMPT_VERSION,
+                    V3_2_PROMPT_VERSION
+            );
+
     private static final List<String> INITIAL_V2_SESSION =
             List.of(
                     "flow_summary",
@@ -46,25 +63,36 @@ public final class FeedbackItemRules {
                     "interpretation_limit"
             );
 
-    private static final Set<String> INITIAL_LEGACY_TARGET = Set.of(
-            "initial_uncertainty",
-            "initial_counter_scenario",
-            "initial_factor_to_review",
-            "interpretation_limit"
-    );
+    private static final Set<String> INITIAL_LEGACY_TARGET =
+            Set.of(
+                    "initial_uncertainty",
+                    "initial_counter_scenario",
+                    "initial_factor_to_review",
+                    "interpretation_limit"
+            );
 
-    private static final Set<String> FINAL_LEGACY_TARGET = Set.of(
-            "final_observed_flow",
-            "final_co_observed_factors",
-            "final_reflection_improvement",
-            "final_next_hypothesis",
-            "interpretation_limit"
-    );
+    private static final Set<String> FINAL_LEGACY_TARGET =
+            Set.of(
+                    "final_observed_flow",
+                    "final_co_observed_factors",
+                    "final_reflection_improvement",
+                    "final_next_hypothesis",
+                    "interpretation_limit"
+            );
 
     private static final Set<String> LEGACY_SESSION =
             Set.of("flow_summary", "interpretation_limit");
 
     private FeedbackItemRules() {
+    }
+
+    /**
+     * Explicit versions sharing the v2 item taxonomy.
+     * The actual promptVersion must remain unchanged.
+     */
+    public static boolean usesV2ItemContract(String promptVersion) {
+        return promptVersion != null
+                && V2_ITEM_CONTRACT_VERSIONS.contains(promptVersion);
     }
 
     public static void validate(
@@ -79,7 +107,7 @@ public final class FeedbackItemRules {
             );
         }
 
-        boolean v2 = V2_PROMPT_VERSION.equals(promptVersion);
+        boolean v2 = usesV2ItemContract(promptVersion);
 
         Map<String, Set<Integer>> sortOrdersByScope =
                 new HashMap<>();
@@ -183,6 +211,7 @@ public final class FeedbackItemRules {
 
             if (v2) {
                 int rank = v2Types.indexOf(item.type());
+
                 int previous =
                         lastOrderByScope.getOrDefault(scope, -1);
 
@@ -214,12 +243,17 @@ public final class FeedbackItemRules {
             }
         }
 
-        validateRequiredTypes(stage, promptVersion, allowedTargets, typesByScope);
+        validateRequiredTypes(
+                stage,
+                promptVersion,
+                allowedTargets,
+                typesByScope
+        );
     }
 
     /**
-     * Shared v2 completeness check for both model-generated and approved RAG
-     * results. Legacy prompt versions keep their existing requirements.
+     * Completeness check shared by v2.1 and explicitly
+     * supported v3-family prompt versions.
      */
     static void validateRequiredTypes(
             AiFeedback.FeedbackStage stage,
@@ -227,7 +261,7 @@ public final class FeedbackItemRules {
             Set<UUID> allowedTargets,
             Map<String, Set<String>> typesByScope
     ) {
-        if (!V2_PROMPT_VERSION.equals(promptVersion)) {
+        if (!usesV2ItemContract(promptVersion)) {
             return;
         }
 
@@ -235,22 +269,32 @@ public final class FeedbackItemRules {
                 stage == AiFeedback.FeedbackStage.INITIAL
                         ? Set.of("flow_summary", "news_analysis")
                         : Set.of("flow_summary");
-        checkRequired("session", sessionRequired, typesByScope);
+
+        checkRequired(
+                "session",
+                sessionRequired,
+                typesByScope
+        );
 
         Set<String> targetRequired =
                 stage == AiFeedback.FeedbackStage.INITIAL
                         ? Set.of(
-                                "initial_market_impact",
-                                "initial_prediction_review",
-                                "initial_counter_scenario"
-                        )
+                        "initial_market_impact",
+                        "initial_prediction_review",
+                        "initial_counter_scenario"
+                )
                         : Set.of(
-                                "final_observed_flow",
-                                "final_market_explanation",
-                                "final_prediction_review"
-                        );
+                        "final_observed_flow",
+                        "final_market_explanation",
+                        "final_prediction_review"
+                );
+
         for (UUID targetId : allowedTargets) {
-            checkRequired(targetId.toString(), targetRequired, typesByScope);
+            checkRequired(
+                    targetId.toString(),
+                    targetRequired,
+                    typesByScope
+            );
         }
     }
 
@@ -274,7 +318,10 @@ public final class FeedbackItemRules {
             Map<String, Set<String>> typesByScope
     ) {
         Set<String> actual =
-                typesByScope.getOrDefault(scope, Set.of());
+                typesByScope.getOrDefault(
+                        scope,
+                        Set.of()
+                );
 
         if (!actual.containsAll(required)) {
             Set<String> missing =

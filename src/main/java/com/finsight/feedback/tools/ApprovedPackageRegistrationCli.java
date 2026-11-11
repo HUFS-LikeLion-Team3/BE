@@ -150,11 +150,13 @@ public final class ApprovedPackageRegistrationCli {
             String selectionTier = switch (tier) {
                 case 0 -> "primary_official";
                 case 1 -> "original_article";
+                case 2 -> "trusted_research";
                 default -> throw conflict("unconfirmed selection_tier mapping: " + tier);
             };
             if (tier == 0 && !(Set.of("official_statistic", "government_release", "central_bank_release").contains(sourceType)))
                 throw conflict("primary_official tier with nonofficial source");
             if (tier == 1 && !"original_article".equals(sourceType)) throw conflict("original_article tier mismatch");
+            if (tier == 2 && !"research_report".equals(sourceType)) throw conflict("trusted_research tier mismatch");
             String hash = text(d.get("content_hash"), "content_hash");
             if (!hash.matches("[0-9a-f]{64}")) throw conflict("invalid content_hash " + id);
             if (!urlHashes.add(url + "\0" + hash)) throw conflict("duplicate URL+hash in package");
@@ -236,18 +238,38 @@ public final class ApprovedPackageRegistrationCli {
         return flat;
     }
 
+    /** Production default stays finsight; the named #36 clone requires explicit opt-in. */
+    static String allowedDatabaseSchema(String configured) {
+        String expected = (configured == null || configured.isBlank()) ? "finsight" : configured;
+        if (!Set.of("finsight", "finsight_issue36").contains(expected))
+            throw conflict("Unapproved DB schema: " + expected);
+        return expected;
+    }
+
+    static void assertDatabaseUrl(String url, String expected) {
+        String withoutParameters = url.split("\\?", 2)[0];
+        if (!withoutParameters.startsWith("jdbc:mysql:") || !withoutParameters.endsWith("/" + expected))
+            throw conflict("DB_URL must explicitly select " + expected);
+    }
+
     private static Connection connect() throws Exception {
+        String expected = allowedDatabaseSchema(System.getenv("ISSUE26_EXPECTED_SCHEMA"));
         String url = getenvRequired("DB_URL");
-        if (!url.startsWith("jdbc:mysql:") || !url.contains("/finsight"))
-            throw conflict("Refusing to access DB_URL not explicitly pointing at finsight");
+        assertDatabaseUrl(url, expected);
         Connection db = DriverManager.getConnection(url, getenvRequired("DB_USERNAME"), getenvRequired("DB_PASSWORD"));
-        try (var st = db.createStatement()) {
-            st.execute("SET SESSION time_zone = '+00:00'");
-            try (ResultSet r = st.executeQuery("SELECT DATABASE()")) {
-                if (!r.next() || !"finsight".equals(r.getString(1))) throw conflict("Selected database is not finsight");
+        try {
+            try (var st = db.createStatement()) {
+                st.execute("SET SESSION time_zone = '+00:00'");
+                try (ResultSet r = st.executeQuery("SELECT DATABASE()")) {
+                    if (!r.next() || !expected.equals(r.getString(1)))
+                        throw conflict("Selected database differs from " + expected);
+                }
             }
+            return db;
+        } catch (Exception ex) {
+            db.close();
+            throw ex;
         }
-        return db;
     }
 
     private static void assertSchema(Connection db) throws SQLException {

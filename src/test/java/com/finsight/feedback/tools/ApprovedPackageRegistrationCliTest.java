@@ -19,6 +19,69 @@ class ApprovedPackageRegistrationCliTest {
         }
     }
 
+    private String issue36Fixture(String filename) throws Exception {
+        try (var stream = getClass().getResourceAsStream("/issue36/" + filename)) {
+            if (stream == null) throw new IllegalStateException("Missing issue36 fixture: " + filename);
+            return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    @Test
+    void databaseSelectionDefaultsToProductionAndAllowsOnlyExplicitIssue36Clone() {
+        assertEquals("finsight", ApprovedPackageRegistrationCli.allowedDatabaseSchema(null));
+        assertEquals("finsight", ApprovedPackageRegistrationCli.allowedDatabaseSchema(""));
+        assertEquals("finsight", ApprovedPackageRegistrationCli.allowedDatabaseSchema("finsight"));
+        assertEquals("finsight_issue36", ApprovedPackageRegistrationCli.allowedDatabaseSchema("finsight_issue36"));
+        assertThrows(IllegalStateException.class,
+                () -> ApprovedPackageRegistrationCli.allowedDatabaseSchema("finsight_prod"));
+    }
+
+    @Test
+    void databaseUrlMustSelectTheExactExpectedSchema() {
+        ApprovedPackageRegistrationCli.assertDatabaseUrl(
+                "jdbc:mysql://localhost:3306/finsight_issue36?serverTimezone=Asia/Seoul", "finsight_issue36");
+        ApprovedPackageRegistrationCli.assertDatabaseUrl(
+                "jdbc:mysql://localhost:3306/finsight?serverTimezone=Asia/Seoul", "finsight");
+        assertThrows(IllegalStateException.class, () -> ApprovedPackageRegistrationCli.assertDatabaseUrl(
+                "jdbc:mysql://localhost:3306/finsight", "finsight_issue36"));
+        assertThrows(IllegalStateException.class, () -> ApprovedPackageRegistrationCli.assertDatabaseUrl(
+                "jdbc:mysql://localhost:3306/finsight_issue36_copy", "finsight_issue36"));
+        assertThrows(IllegalStateException.class, () -> ApprovedPackageRegistrationCli.assertDatabaseUrl(
+                "jdbc:postgresql://localhost/finsight_issue36", "finsight_issue36"));
+    }
+
+    @Test
+    void keepsPrimaryOfficialTierZeroMapping() throws Exception {
+        var pkg = ApprovedPackageRegistrationCli.validate(issue36Fixture("tier0-official-package.json"));
+        assertEquals("primary_official", pkg.documents().get(0).selectionTier());
+        assertEquals("government_release", pkg.documents().get(0).sourceType());
+    }
+
+    @Test
+    void mapsTierTwoResearchReportToTrustedResearchWithoutRewritingPackage() throws Exception {
+        var pkg = ApprovedPackageRegistrationCli.validate(issue36Fixture("tier2-research-package.json"));
+        var doc = pkg.documents().get(0);
+        assertEquals("trusted_research", doc.selectionTier());
+        assertEquals("research_report", doc.sourceType());
+        assertEquals("dd78bd77074d70fe364f9c337b3dcf9b0c3012d0bef9523a57b16db0b58d1f04", doc.contentHash());
+        assertEquals("sha256:d24597edd825006029aec9d1684cba7c3bb1d09588663b15146771a8f0de2b75", pkg.id());
+        assertEquals(pkg.id(), ApprovedPackageRegistrationCli.inventory(pkg).get("packageId"));
+        assertEquals(1, doc.chunks().size());
+    }
+
+    @Test
+    void rejectsUnsupportedOrMismatchedTiersEvenWithValidCanonicalHash() throws Exception {
+        var mismatchedResearch = assertThrows(IllegalStateException.class,
+                () -> ApprovedPackageRegistrationCli.validate(issue36Fixture("tier2-invalid-source-package.json")));
+        assertEquals("trusted_research tier mismatch", mismatchedResearch.getMessage());
+        var mismatchedArticle = assertThrows(IllegalStateException.class,
+                () -> ApprovedPackageRegistrationCli.validate(issue36Fixture("tier1-invalid-source-package.json")));
+        assertEquals("original_article tier mismatch", mismatchedArticle.getMessage());
+        var unknownTier = assertThrows(IllegalStateException.class,
+                () -> ApprovedPackageRegistrationCli.validate(issue36Fixture("tier3-unsupported-package.json")));
+        assertEquals("unconfirmed selection_tier mapping: 3", unknownTier.getMessage());
+    }
+
     @Test
     void validatesExactUtf8PackageAndBuildsInventory() throws Exception {
         var pkg = ApprovedPackageRegistrationCli.validate(fixture());

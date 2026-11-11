@@ -295,4 +295,82 @@ class ApprovedRagResultParserTest {
         }
     }
 
+
+    @Test
+    void allSupportedModernPromptVersionsSurviveInitialAndFinalApprovedParsing() {
+        for (String version : List.of(
+                "news-market-explanation-v2.1",
+                "news-market-judgment-v3",
+                "news-market-judgment-v3.1",
+                "news-market-judgment-v3.2")) {
+            Map<String, Object> initial = response(output());
+            initial.put("promptVersion", version);
+            ApprovedRagResultParser.Parsed parsedInitial = parser.parse(
+                    job(initial), feedback(AiFeedback.FeedbackStage.INITIAL));
+            assertEquals(version, parsedInitial.promptVersion(), version);
+            assertEquals("한글 본문", parsedInitial.flowSummary(), version);
+            assertEquals(5, parsedInitial.items().size(), version);
+            assertEquals(2, parsedInitial.citations().size(), version);
+
+            Map<String, Object> finalBody = finalOutput();
+            finalBody.put("flowSummary", "한글 본문");
+            Map<String, Object> finalResponse = response(finalBody);
+            finalResponse.put("promptVersion", version);
+            ApprovedRagResultParser.Parsed parsedFinal = parser.parse(
+                    job(finalResponse), feedback(AiFeedback.FeedbackStage.FINAL));
+            assertEquals(version, parsedFinal.promptVersion(), version);
+            assertEquals("한글 본문", parsedFinal.flowSummary(), version);
+            assertEquals(4, parsedFinal.items().size(), version);
+            assertEquals(2, parsedFinal.citations().size(), version);
+        }
+    }
+
+    @Test
+    void modernFinalTakeawayCanBeIncludedWithoutChangingRequiredItems() {
+        for (String version : List.of(
+                "news-market-explanation-v2.1",
+                "news-market-judgment-v3",
+                "news-market-judgment-v3.1",
+                "news-market-judgment-v3.2")) {
+            Map<String, Object> body = finalOutput();
+            body.put("targetFeedbacks", List.of(Map.of(
+                    "sessionTargetId", sessionTargetId.toString(),
+                    "items", List.of(
+                            item("f1", "final_observed_flow", 0, List.of("R-A")),
+                            item("f2", "final_market_explanation", 1, List.of()),
+                            item("f3", "final_prediction_review", 2, List.of("R-B")),
+                            item("f4", "final_takeaway", 3, List.of())))));
+            Map<String, Object> result = response(body);
+            result.put("promptVersion", version);
+            ApprovedRagResultParser.Parsed parsed = parser.parse(
+                    job(result), feedback(AiFeedback.FeedbackStage.FINAL));
+            assertEquals(5, parsed.items().size(), version);
+            assertEquals("final_takeaway", parsed.items().get(4).type().name(), version);
+            assertEquals(2, parsed.citations().size(), version);
+        }
+    }
+
+    @Test
+    void legacyFinalContractRemainsSupportedAndUnknownV3IsNotSilentlyPromoted() {
+        Map<String, Object> legacyBody = finalOutput();
+        legacyBody.put("targetFeedbacks", List.of(Map.of(
+                "sessionTargetId", sessionTargetId.toString(),
+                "items", List.of(
+                        item("old1", "final_observed_flow", 0, List.of("R-A")),
+                        item("old2", "final_co_observed_factors", 1, List.of()),
+                        item("old3", "final_reflection_improvement", 2, List.of()),
+                        item("old4", "final_next_hypothesis", 3, List.of("R-B"))))));
+        Map<String, Object> legacy = response(legacyBody);
+        legacy.put("promptVersion", "feedback-integration-v1");
+        ApprovedRagResultParser.Parsed parsed = parser.parse(
+                job(legacy), feedback(AiFeedback.FeedbackStage.FINAL));
+        assertEquals("feedback-integration-v1", parsed.promptVersion());
+        assertEquals(5, parsed.items().size());
+
+        Map<String, Object> unsupported = response(output());
+        unsupported.put("promptVersion", "news-market-judgment-v3.3");
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> parser.parse(job(unsupported), feedback(AiFeedback.FeedbackStage.INITIAL)));
+        assertEquals("approved_item_invalid_type_or_scope", error.getMessage());
+    }
 }

@@ -26,6 +26,28 @@ class AiRagPollingSchedulerTest {
     }
 
     @Test
+    void freshSchedulerAfterRestartRescansReadyJobWhenDeliveryResponseWasLost() {
+        // The old scheduler's in-memory retry delay does not survive process restart.
+        // A new instance must scan durable database candidates again.
+        AiRagJobRepository repo = mock(AiRagJobRepository.class);
+        AiRagDeliveryCoordinator coordinator = mock(AiRagDeliveryCoordinator.class);
+        UUID feedbackId = UUID.randomUUID();
+        when(repo.findDeliveryCandidates(List.of(
+                AiFeedback.FeedbackStatus.generating, AiFeedback.FeedbackStatus.ready)))
+                .thenReturn(List.of(feedbackId));
+        when(coordinator.processOne(feedbackId))
+                .thenThrow(new IllegalStateException("simulated_lost_delivery_response"))
+                .thenReturn(AiRagDeliveryCoordinator.Outcome.STORED);
+
+        new AiRagPollingScheduler(repo, coordinator).poll(); // simulated old process
+        new AiRagPollingScheduler(repo, coordinator).poll(); // simulated new process
+
+        verify(repo, times(2)).findDeliveryCandidates(List.of(
+                AiFeedback.FeedbackStatus.generating, AiFeedback.FeedbackStatus.ready));
+        verify(coordinator, times(2)).processOne(feedbackId);
+    }
+
+    @Test
     void oneJobFailingCannotPreventAnotherFromProcessing() {
         AiRagJobRepository repo = mock(AiRagJobRepository.class);
         AiRagDeliveryCoordinator coordinator = mock(AiRagDeliveryCoordinator.class);

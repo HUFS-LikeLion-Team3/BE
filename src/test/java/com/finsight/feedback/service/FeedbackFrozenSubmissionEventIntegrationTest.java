@@ -2,6 +2,7 @@
 package com.finsight.feedback.service;
 
 import com.finsight.feedback.entity.AiFeedback;
+import com.finsight.feedback.entity.AiRagJob;
 import com.finsight.feedback.event.FeedbackFrozenSubmissionEventListener;
 import com.finsight.feedback.event.FeedbackSubmissionIntentListener;
 import com.finsight.feedback.repository.AiFeedbackInputSnapshotRepository;
@@ -19,6 +20,7 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.Ordered;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -89,6 +91,9 @@ class FeedbackFrozenSubmissionEventIntegrationTest {
 
     @Autowired
     AiFeedbackRepository feedbackRepository;
+
+    @Autowired
+    FeedbackFrozenSubmissionCoordinator coordinator;
 
     @Autowired
     AiFeedbackInputSnapshotRepository snapshotRepository;
@@ -489,5 +494,88 @@ class FeedbackFrozenSubmissionEventIntegrationTest {
                         eq(PACKAGE_ID),
                         isNull()
                 );
+    }
+
+    /**
+     * #36: a new deployment can change AI settings after INITIAL was
+     * submitted, but an existing session must retain the original contract.
+     * This is a simulated runtime configuration change, not a process restart.
+     */
+    @Test
+    void finalKeepsInitialPromptPolicyAndPackageAfterConfigurationChange() {
+        UUID sessionId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UUID reflectionSubmissionId = UUID.randomUUID();
+        UUID acceptedInitialJobId = UUID.randomUUID();
+        String nextPackageId = "sha256:" + "c".repeat(64);
+        String originalPrompt = (String) ReflectionTestUtils.getField(coordinator, "promptVersion");
+        String originalPolicy = (String) ReflectionTestUtils.getField(coordinator, "policyVersion");
+        String originalPackage = (String) ReflectionTestUtils.getField(coordinator, "packageId");
+
+        try {
+            ReflectionTestUtils.setField(coordinator, "promptVersion", "news-market-explanation-v2.1");
+            ReflectionTestUtils.setField(coordinator, "policyVersion", "policy-v2.1");
+            ReflectionTestUtils.setField(coordinator, "packageId", PACKAGE_ID);
+
+            configureSessionLock(sessionId);
+            configureInitial(sessionId, frozenInput(SUBMITTED_AT));
+            submitInitial(sessionId, userId);
+
+            AiFeedback initial = feedback(sessionId, AiFeedback.FeedbackStage.INITIAL);
+            transaction().executeWithoutResult(status -> {
+                var stored = jobRepository.findById(initial.getId()).orElseThrow();
+                stored.accepted(acceptedInitialJobId, "received");
+                jobRepository.save(stored);
+            });
+
+            // The next deployment uses a new prompt, policy and package.
+            ReflectionTestUtils.setField(coordinator, "promptVersion", "news-market-judgment-v3.2");
+            ReflectionTestUtils.setField(coordinator, "policyVersion", "policy-v3.2");
+            ReflectionTestUtils.setField(coordinator, "packageId", nextPackageId);
+
+            OffsetDateTime completedAt = SUBMITTED_AT.plusDays(3);
+            OffsetDateTime outcomeCutoff = completedAt.plusHours(1);
+            FeedbackGenerationInput finalInput = frozenInput(outcomeCutoff);
+            when(finalBuilder.resolveCutoff(sessionId, completedAt)).thenReturn(outcomeCutoff);
+            when(finalBuilder.build(sessionId, outcomeCutoff)).thenReturn(finalInput);
+            String finalJson = "{\"frozen\":true,\"stage\":\"final\"}";
+            when(contractMapper.envelope(
+                    any(AiFeedback.class), same(finalInput),
+                    eq(PACKAGE_ID), eq(acceptedInitialJobId)
+            )).thenReturn(finalJson);
+
+            transaction().executeWithoutResult(status -> publisher.publishEvent(
+                    new FinalReflectionSubmittedEvent(sessionId, reflectionSubmissionId, completedAt)
+            ));
+
+            AiFeedback savedFinal = feedback(sessionId, AiFeedback.FeedbackStage.FINAL);
+            AiRagJob savedJob = jobRepository.findById(savedFinal.getId()).orElseThrow();
+            var finalSnapshot = snapshotRepository.findByAiFeedbackId(savedFinal.getId()).orElseThrow();
+
+            assertEquals("news-market-explanation-v2.1", initial.getPromptVersion());
+            assertEquals(initial.getPromptVersion(), savedFinal.getPromptVersion());
+            assertEquals(initial.getPolicyVersion(), savedFinal.getPolicyVersion());
+            assertEquals(PACKAGE_ID, savedJob.getPackageId());
+            assertEquals(finalJson, savedJob.getRequestJson());
+            assertEquals(INPUT_HASH, finalSnapshot.getInputHash());
+            assertEquals(outcomeCutoff.toInstant(), savedFinal.getInputCutoffAt().toInstant());
+
+            // A repeated FINAL event must not rebuild the frozen work.
+            transaction().executeWithoutResult(status -> publisher.publishEvent(
+                    new FinalReflectionSubmittedEvent(sessionId, reflectionSubmissionId, completedAt)
+            ));
+            assertEquals(savedFinal.getId(), feedback(sessionId, AiFeedback.FeedbackStage.FINAL).getId());
+            assertEquals(2, feedbackRepository.findAllByLearningSessionId(sessionId).size());
+            assertEquals(finalJson, jobRepository.findById(savedFinal.getId()).orElseThrow().getRequestJson());
+            verify(finalBuilder, times(1)).build(sessionId, outcomeCutoff);
+            verify(contractMapper, times(1)).envelope(
+                    any(AiFeedback.class), same(finalInput),
+                    eq(PACKAGE_ID), eq(acceptedInitialJobId)
+            );
+        } finally {
+            ReflectionTestUtils.setField(coordinator, "promptVersion", originalPrompt);
+            ReflectionTestUtils.setField(coordinator, "policyVersion", originalPolicy);
+            ReflectionTestUtils.setField(coordinator, "packageId", originalPackage);
+        }
     }
 }

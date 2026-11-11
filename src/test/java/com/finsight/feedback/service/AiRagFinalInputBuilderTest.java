@@ -7,15 +7,20 @@ import com.finsight.feedback.repository.AiFeedbackRepository;
 import com.finsight.learning.entity.LearningSession;
 import com.finsight.learning.repository.LearningSessionRepository;
 import com.finsight.outcome.entity.MarketObservation;
+import com.finsight.outcome.entity.SessionTargetBaseline;
+import com.finsight.reflection.entity.ReflectionNote;
 import com.finsight.outcome.repository.MarketObservationRepository;
 import com.finsight.outcome.repository.SessionTargetBaselineRepository;
 import com.finsight.reflection.repository.ReflectionNoteRepository;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -208,5 +213,161 @@ class AiRagFinalInputBuilderTest {
         assertEquals(false, rows.get(1).get("usableForAiEvidence"));
         assertNull(rows.get(1).get("observedAt"));
         assertEquals("No official close", rows.get(1).get("unavailableReason"));
+    }
+
+    /**
+     * #36: The FINAL payload must preserve the real T1/T5/T20 statuses and
+     * optional intermediate notes, never fabricate a value for unavailable.
+     * The final reflection answer is always present; the boolean controls
+     * only an optional intermediate note (day_1).
+     */
+    @ParameterizedTest(name = "outcomes={0}, intermediateMemo={1}")
+    @CsvSource({
+            "ready, false", "ready, true",
+            "mixed, false", "mixed, true",
+            "unavailable, false", "unavailable, true"
+    })
+    void finalPreservesAllOutcomeAndIntermediateMemoCombinations(
+            String outcomeScenario, boolean withIntermediateMemo) {
+        Map<String, Object> original = initialSnapshot();
+        savedInitialExists(original);
+        validSubmittedSession();
+
+        boolean allUnavailable = "unavailable".equals(outcomeScenario);
+        SessionTargetBaseline baseline = mock(SessionTargetBaseline.class);
+        when(baseline.getStatus()).thenReturn(allUnavailable
+                ? SessionTargetBaseline.BaselineStatus.unavailable
+                : SessionTargetBaseline.BaselineStatus.ready);
+        when(baseline.getUnit()).thenReturn("KRW");
+        if (allUnavailable) {
+            when(baseline.getUnavailableReason()).thenReturn("No T0 close");
+        }
+        when(baselineRepository.findBySessionTargetId(sessionTargetId))
+                .thenReturn(Optional.of(baseline));
+
+        boolean[] usable = switch (outcomeScenario) {
+            case "ready" -> new boolean[]{true, true, true};
+            case "mixed" -> new boolean[]{true, false, true};
+            case "unavailable" -> new boolean[]{false, false, false};
+            default -> throw new IllegalArgumentException(outcomeScenario);
+        };
+        // Create and stub each Mockito mock before stubbing the repository.
+        // Nesting observedOutcome() inside thenReturn() leaves the outer stubbing unfinished.
+        List<MarketObservation> stubbedObservations = List.of(
+                observedOutcome(1, usable[0]),
+                observedOutcome(5, usable[1]),
+                observedOutcome(20, usable[2]));
+        when(observationRepository.findAllBySessionTargetIdOrderByHorizonAsc(sessionTargetId))
+                .thenReturn(stubbedObservations);
+
+        ReflectionNote finalAnswer = note(null, "final",
+                ReflectionNote.PromptKey.learned, "Check assumptions next time");
+        if (withIntermediateMemo) {
+            ReflectionNote intermediate = note(sessionTargetId, "day_1",
+                    ReflectionNote.PromptKey.new_insight, "Interim insight");
+            when(noteRepository.findAllByLearningSessionIdOrderByCreatedAtAscIdAsc(sessionId))
+                    .thenReturn(List.of(intermediate, finalAnswer));
+        } else {
+            when(noteRepository.findAllByLearningSessionIdOrderByCreatedAtAscIdAsc(sessionId))
+                    .thenReturn(List.of(finalAnswer));
+        }
+
+        FeedbackGenerationInput result = builder.build(sessionId, outcomeCutoffAt);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> targets = (List<Map<String, Object>>)
+                result.marketResultSnapshot().get("targets");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> observations = (List<Map<String, Object>>)
+                targets.getFirst().get("observations");
+        assertEquals(3, observations.size());
+
+        int[] horizons = {1, 5, 20};
+        for (int i = 0; i < observations.size(); i++) {
+            Map<String, Object> row = observations.get(i);
+            assertEquals(horizons[i], row.get("horizon"));
+            assertEquals(usable[i] ? "ready" : "unavailable", row.get("status"));
+            assertEquals(usable[i], row.get("usableForAiEvidence"));
+            if (usable[i]) {
+                assertNotNull(row.get("observedValue"));
+                assertNotNull(row.get("observedAt"));
+            } else {
+                assertNull(row.get("observedValue"));
+                assertNull(row.get("observedAt"));
+                assertEquals("data_missing", row.get("exceptionStatus"));
+                assertEquals("No official close", row.get("unavailableReason"));
+            }
+        }
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> baselines = (List<Map<String, Object>>)
+                result.marketBaselineSnapshot().get("targets");
+        assertEquals(allUnavailable ? "unavailable" : "ready",
+                baselines.getFirst().get("status"));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> notes = (List<Map<String, Object>>)
+                result.reflectionSnapshot().get("notes");
+        assertEquals(withIntermediateMemo ? 2 : 1, notes.size());
+        assertEquals("final", notes.getLast().get("reflectionType"));
+        assertEquals("learned", notes.getLast().get("promptKey"));
+        if (withIntermediateMemo) {
+            assertEquals("day_1", notes.getFirst().get("reflectionType"));
+            assertEquals(sessionTargetId.toString(), notes.getFirst().get("sessionTargetId"));
+        }
+
+        assertEquals(original.get("news"), result.requestSnapshot().get("news"));
+        assertEquals(original.get("prediction"), result.requestSnapshot().get("prediction"));
+        assertEquals(submittedAt.toString(), result.requestSnapshot().get("inputCutoffAt"));
+        assertEquals("final", result.requestSnapshot().get("feedbackStage"));
+    }
+
+    @Test
+    void missingInitialSnapshotRowDoesNotRebuildFinalFromCurrentData() {
+        AiFeedback feedback = mock(AiFeedback.class);
+        when(feedback.getId()).thenReturn(initialFeedbackId);
+        when(feedbackRepository.findByLearningSessionIdAndFeedbackStageAndVersion(
+                sessionId, AiFeedback.FeedbackStage.INITIAL, 1))
+                .thenReturn(Optional.of(feedback));
+        when(snapshotRepository.findByAiFeedbackId(initialFeedbackId))
+                .thenReturn(Optional.empty());
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> builder.build(sessionId, outcomeCutoffAt));
+        assertEquals("initial_snapshot_missing", failure.getMessage());
+        verifyNoInteractions(sessionRepository, baselineRepository,
+                observationRepository, noteRepository);
+    }
+
+    private MarketObservation observedOutcome(int horizon, boolean usable) {
+        MarketObservation row = mock(MarketObservation.class);
+        when(row.getHorizon()).thenReturn(horizon);
+        when(row.getStatus()).thenReturn(usable
+                ? MarketObservation.OutcomeStatus.ready
+                : MarketObservation.OutcomeStatus.unavailable);
+        when(row.getExceptionStatus()).thenReturn(usable
+                ? MarketObservation.OutcomeExceptionStatus.none
+                : MarketObservation.OutcomeExceptionStatus.data_missing);
+        when(row.isUsableForAiEvidence()).thenReturn(usable);
+        when(row.getUnit()).thenReturn("KRW");
+        if (usable) {
+            when(row.getObservedValue()).thenReturn(new BigDecimal("100.00"));
+            when(row.getObservedAt()).thenReturn(outcomeCutoffAt.minusHours(horizon));
+        } else {
+            when(row.getUnavailableReason()).thenReturn("No official close");
+        }
+        return row;
+    }
+
+    private ReflectionNote note(UUID targetId, String type,
+                                ReflectionNote.PromptKey key, String body) {
+        ReflectionNote note = mock(ReflectionNote.class);
+        if (targetId != null) {
+            when(note.getSessionTargetId()).thenReturn(targetId);
+        }
+        when(note.getReflectionType()).thenReturn(type);
+        when(note.getPromptKey()).thenReturn(key);
+        when(note.getBody()).thenReturn(body);
+        when(note.getCreatedAt()).thenReturn(outcomeCutoffAt.minusHours(1));
+        return note;
     }
 }

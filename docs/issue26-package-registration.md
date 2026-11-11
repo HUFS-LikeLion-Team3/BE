@@ -9,7 +9,7 @@
 - 조각 본문의 **공백·개행을 포함한 원문**을 저장. `stored_chunks` 배열 순서를 `chunk_order = 0,1,...`에 대응. 각 `text`의 UTF-8 SHA-256 계산과 결합한 문서의 UTF-8 SHA-256 검증.
 - `published_at`: 원래 ISO 오프셋을 가리키는 **동일 시점**을 UTC `DATETIME(6)`에 기록. JDBC 세션 UTC. 확인 시 다시 UTC Instant와 비교.
 - `retrieved_at`, `created_at`, `updated_at`: **BE에 등록한 시각(UTC)** 기록. 패키지 `available_at`은 AI 자료 가용 시각이지 실제 수집 시각이라고 단정할 수 없으므로 `retrieved_at`으로 사용하지 않음. 기존 같은 ID 자료 재사용 시 원래 시각을 수정하지 않음.
-- `selection_tier`의 패키지 숫자 `0→primary_official`, `1→original_article`는 제공된 승인/대역 파일로 확인된 값만 매핑. 다른 숫자(예: 2)는 AI 담당자의 매핑 확인 전 거부. `sourceType`과 분류 일치도 검증. `is_primary=false`, `news_id=NULL`로 새 자료를 삽입하고 기존 뉴스/대표 출처 여부는 변경하지 않음. `linked_news_ids`가 비어 있지 않으면 단일 `news_id`와 손실 없이 매핑할 계약이 없어 거부.
+- `selection_tier`의 패키지 숫자는 `0→primary_official`, `1→original_article`, `2→trusted_research`로 매핑한다(#36). `sourceType`과의 조합을 검증하며, 현재 등록 도구의 등급 2 허용 조합은 `research_report`다. 이 조합 제한이 실제 v2.1 원본 6문서의 메타데이터와 일치하는지는 아직 미검증이므로 원본 패키지 확인 후 확정한다. 범위 밖 등급을 자동 허용하지 않는다. `is_primary=false`, `news_id=NULL`로 새 자료를 삽입하고 기존 뉴스/대표 출처 여부는 변경하지 않음. `linked_news_ids`가 비어 있지 않으면 단일 `news_id`와 손실 없이 매핑할 계약이 없어 거부.
 - 패키지에 `document_version` 필드가 없고 현재 BE 테이블에도 동일 컬럼이 없음. **버전 문자열을 지어내지 않는다.** 문서 UUID와 본문 해시를 불변 버전 식별자로 사용하며 이후 별도 버전 필드 요구 시 계약·스키마 합의가 필요.
 - 등록 패키지의 `market_target_ids`는 **실제 BE PK와 활성 상태**를 확인해야 함. 누락되거나 다르면 등록 거부; 자료 도구가 시장을 만들거나 후보 ID를 마음대로 바꾸지 않음. 운영자가 별도 검증한 실제 코드·ID 매핑을 확인 후에만 `register` 실행.
 - 기존 `source_documents`는 뉴스 출처 API에서도 사용하므로 API 응답/기존 뉴스 데이터를 변경하지 않음. 현재 출처 테이블에 별도 원문 내용 컬럼을 새로 만들지 않고 조각 본문을 순서대로 결합하여 검증.

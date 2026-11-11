@@ -120,6 +120,34 @@ class AiRagDeliveryCoordinatorTest {
     }
 
     @Test
+    void blockedResultIsStoredAfterSourceRepairWithoutRefetchOrRegeneration() {
+        // The approved result and its hash were captured before storage was blocked.
+        // The operator fixes the missing source between these two delivery attempts.
+        stubJob("blocked", true);
+        feedback(AiFeedback.FeedbackStatus.generating);
+        when(persistence.persistCaptured(feedbackId))
+                .thenThrow(new IllegalStateException("approved_source_document_missing"))
+                .thenReturn(true);
+
+        assertEquals(AiRagDeliveryCoordinator.Outcome.BLOCKED, coordinator.processOne(feedbackId));
+        assertEquals(AiRagDeliveryCoordinator.Outcome.STORED, coordinator.processOne(feedbackId));
+
+        var ordered = inOrder(persistence, store, client);
+        ordered.verify(persistence).persistCaptured(feedbackId);
+        ordered.verify(store).blocked(feedbackId, "approved_source_document_missing");
+        ordered.verify(client).reportDelivery(eq(jobId), eq("blocked"), eq(hash),
+                contains("approved_source_document_missing"));
+        ordered.verify(persistence).persistCaptured(feedbackId);
+        ordered.verify(client).reportDelivery(eq(jobId), eq("stored"), eq(hash),
+                startsWith("be-issue26:stored:"));
+        ordered.verify(store).stored(feedbackId, jobId, hash);
+        verifyNoInteractions(generation);
+        verify(client, never()).getJobStatus(any());
+        verify(client, never()).getApprovedResultRaw(any());
+        verify(client, never()).submitFrozenJob(any());
+    }
+
+    @Test
     void awaitingStorageWithoutSavedOriginalRequiresManualReconciliation() {
         stubJob("accepted", false);
         feedback(AiFeedback.FeedbackStatus.generating);
@@ -168,6 +196,28 @@ class AiRagDeliveryCoordinatorTest {
         assertEquals(AiRagDeliveryCoordinator.Outcome.FAILED, coordinator.processOne(feedbackId));
         verify(failureRecorder).fail(feedbackId, "provider_error");
         verifyNoInteractions(generation, persistence);
+        verify(client, never()).submitFrozenJob(any());
+    }
+
+    @Test
+    void lostStoredDeliveryResponseIsRetriedWithoutFetchingOrRewritingReadyFeedback() {
+        // BE has committed the ready feedback and captured approved result already.
+        // The first AI delivery POST may succeed remotely while its HTTP response is lost.
+        stubJob("accepted", true);
+        feedback(AiFeedback.FeedbackStatus.ready);
+        when(client.reportDelivery(eq(jobId), eq("stored"), eq(hash), startsWith("be-issue26:stored:")))
+                .thenThrow(new IllegalStateException("simulated_lost_delivery_response"))
+                .thenReturn(Map.of("status", "stored"));
+
+        assertThrows(IllegalStateException.class, () -> coordinator.processOne(feedbackId));
+        assertEquals(AiRagDeliveryCoordinator.Outcome.STORED, coordinator.processOne(feedbackId));
+
+        verify(client, times(2)).reportDelivery(eq(jobId), eq("stored"), eq(hash),
+                eq("be-issue26:stored:" + hash));
+        verify(store, times(1)).stored(feedbackId, jobId, hash);
+        verifyNoInteractions(generation, persistence, failureRecorder);
+        verify(client, never()).getJobStatus(any());
+        verify(client, never()).getApprovedResultRaw(any());
         verify(client, never()).submitFrozenJob(any());
     }
 

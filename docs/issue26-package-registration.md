@@ -33,6 +33,19 @@ read -s DB_PASSWORD; echo; export DB_PASSWORD
 ./gradlew issue26Package -Pissue26Mode=preflight -Pissue26File="$HOME/Downloads/demo-package.json"
 ```
 
+#36 별도 복제 스키마에서 preflight만 실행할 경우에는 명시적으로 대상 스키마를 지정한다.
+기본값은 여전히 `finsight`이고, 이 옵션은 `finsight_issue36` 외 임의 DB 이름을 허용하지 않는다.
+**실제 AI 자료 등록 전에 원본 패키지와 시장 UUID를 확인해야 한다.**
+
+```bash
+export ISSUE26_EXPECTED_SCHEMA=finsight_issue36
+export DB_URL='jdbc:mysql://127.0.0.1:3306/finsight_issue36?serverTimezone=Asia/Seoul&characterEncoding=UTF-8'
+# 사전에 DB_USERNAME, DB_PASSWORD를 로컬 환경 변수로 설정한다.
+./gradlew issue26Package -Pissue26Mode=preflight -Pissue26File="$HOME/Downloads/demo-package.json"
+# 기존 market UUID가 일치하지 않으면 거절되는 것이 정상. 임의 행/UUID를 생성하지 말 것.
+unset ISSUE26_EXPECTED_SCHEMA
+```
+
 현재 로컬 market_targets에는 `SAMPLE_KR`·`SAMPLE_US`만 있어 위 preflight가 **시장 UUID 누락으로 실패하는 것이 정상**. 실제 시장 기준정보 담당자와 매핑을 먼저 확정해야 하며, 등록 도구가 샘플 시장과 임의로 연결하지 않는다.
 
 `ISSUE26_VERIFIED_MARKETS`에는 패키지의 모든 시장 UUID에 대해 **실제 BE DB의 code=UUID**를 쉼표로 나열해야 함. 위 `ACTUAL_CODE`와 UUID는 명령 형태 설명용이며 실제 사용할 값이 아님. 일치하지 않으면 등록을 중단함.

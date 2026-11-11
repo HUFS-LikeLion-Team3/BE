@@ -27,6 +27,30 @@ class ApprovedPackageRegistrationCliTest {
     }
 
     @Test
+    void databaseSelectionDefaultsToProductionAndAllowsOnlyExplicitIssue36Clone() {
+        assertEquals("finsight", ApprovedPackageRegistrationCli.allowedDatabaseSchema(null));
+        assertEquals("finsight", ApprovedPackageRegistrationCli.allowedDatabaseSchema(""));
+        assertEquals("finsight", ApprovedPackageRegistrationCli.allowedDatabaseSchema("finsight"));
+        assertEquals("finsight_issue36", ApprovedPackageRegistrationCli.allowedDatabaseSchema("finsight_issue36"));
+        assertThrows(IllegalStateException.class,
+                () -> ApprovedPackageRegistrationCli.allowedDatabaseSchema("finsight_prod"));
+    }
+
+    @Test
+    void databaseUrlMustSelectTheExactExpectedSchema() {
+        ApprovedPackageRegistrationCli.assertDatabaseUrl(
+                "jdbc:mysql://localhost:3306/finsight_issue36?serverTimezone=Asia/Seoul", "finsight_issue36");
+        ApprovedPackageRegistrationCli.assertDatabaseUrl(
+                "jdbc:mysql://localhost:3306/finsight?serverTimezone=Asia/Seoul", "finsight");
+        assertThrows(IllegalStateException.class, () -> ApprovedPackageRegistrationCli.assertDatabaseUrl(
+                "jdbc:mysql://localhost:3306/finsight", "finsight_issue36"));
+        assertThrows(IllegalStateException.class, () -> ApprovedPackageRegistrationCli.assertDatabaseUrl(
+                "jdbc:mysql://localhost:3306/finsight_issue36_copy", "finsight_issue36"));
+        assertThrows(IllegalStateException.class, () -> ApprovedPackageRegistrationCli.assertDatabaseUrl(
+                "jdbc:postgresql://localhost/finsight_issue36", "finsight_issue36"));
+    }
+
+    @Test
     void keepsPrimaryOfficialTierZeroMapping() throws Exception {
         var pkg = ApprovedPackageRegistrationCli.validate(issue36Fixture("tier0-official-package.json"));
         assertEquals("primary_official", pkg.documents().get(0).selectionTier());

@@ -238,18 +238,38 @@ public final class ApprovedPackageRegistrationCli {
         return flat;
     }
 
+    /** Production default stays finsight; the named #36 clone requires explicit opt-in. */
+    static String allowedDatabaseSchema(String configured) {
+        String expected = (configured == null || configured.isBlank()) ? "finsight" : configured;
+        if (!Set.of("finsight", "finsight_issue36").contains(expected))
+            throw conflict("Unapproved DB schema: " + expected);
+        return expected;
+    }
+
+    static void assertDatabaseUrl(String url, String expected) {
+        String withoutParameters = url.split("\\?", 2)[0];
+        if (!withoutParameters.startsWith("jdbc:mysql:") || !withoutParameters.endsWith("/" + expected))
+            throw conflict("DB_URL must explicitly select " + expected);
+    }
+
     private static Connection connect() throws Exception {
+        String expected = allowedDatabaseSchema(System.getenv("ISSUE26_EXPECTED_SCHEMA"));
         String url = getenvRequired("DB_URL");
-        if (!url.startsWith("jdbc:mysql:") || !url.contains("/finsight"))
-            throw conflict("Refusing to access DB_URL not explicitly pointing at finsight");
+        assertDatabaseUrl(url, expected);
         Connection db = DriverManager.getConnection(url, getenvRequired("DB_USERNAME"), getenvRequired("DB_PASSWORD"));
-        try (var st = db.createStatement()) {
-            st.execute("SET SESSION time_zone = '+00:00'");
-            try (ResultSet r = st.executeQuery("SELECT DATABASE()")) {
-                if (!r.next() || !"finsight".equals(r.getString(1))) throw conflict("Selected database is not finsight");
+        try {
+            try (var st = db.createStatement()) {
+                st.execute("SET SESSION time_zone = '+00:00'");
+                try (ResultSet r = st.executeQuery("SELECT DATABASE()")) {
+                    if (!r.next() || !expected.equals(r.getString(1)))
+                        throw conflict("Selected database differs from " + expected);
+                }
             }
+            return db;
+        } catch (Exception ex) {
+            db.close();
+            throw ex;
         }
-        return db;
     }
 
     private static void assertSchema(Connection db) throws SQLException {

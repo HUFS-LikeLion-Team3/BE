@@ -1,8 +1,13 @@
 package com.finsight.feedback.tools;
 
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.TreeMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -69,17 +74,116 @@ class ApprovedPackageRegistrationCliTest {
         assertEquals(1, doc.chunks().size());
     }
 
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> packageBody() throws Exception {
+        return JsonMapper.builder().build().readValue(fixture(), Map.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> documentEntry(Map<String, Object> body) {
+        return (Map<String, Object>) ((List<?>) body.get("documents")).get(0);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> document(Map<String, Object> body) {
+        return (Map<String, Object>) documentEntry(body).get("document");
+    }
+
+    private Object sortedJson(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            var sorted = new TreeMap<String, Object>();
+            map.forEach((key, child) -> sorted.put((String) key, sortedJson(child)));
+            return sorted;
+        }
+        if (value instanceof List<?> list) return list.stream().map(this::sortedJson).toList();
+        return value;
+    }
+
+    // Re-seal the outer package so negative tests reach the inner validation.
+    private String reseal(Map<String, Object> body) throws Exception {
+        var json = JsonMapper.builder().build();
+        body.remove("packageId");
+        byte[] canonical = json.writeValueAsString(sortedJson(body)).getBytes(StandardCharsets.UTF_8);
+        body.put("packageId", "sha256:" + HexFormat.of().formatHex(
+                MessageDigest.getInstance("SHA-256").digest(canonical)));
+        return json.writeValueAsString(body);
+    }
+
     @Test
-    void rejectsUnsupportedOrMismatchedTiersEvenWithValidCanonicalHash() throws Exception {
-        var mismatchedResearch = assertThrows(IllegalStateException.class,
-                () -> ApprovedPackageRegistrationCli.validate(issue36Fixture("tier2-invalid-source-package.json")));
-        assertEquals("trusted_research tier mismatch", mismatchedResearch.getMessage());
-        var mismatchedArticle = assertThrows(IllegalStateException.class,
-                () -> ApprovedPackageRegistrationCli.validate(issue36Fixture("tier1-invalid-source-package.json")));
-        assertEquals("original_article tier mismatch", mismatchedArticle.getMessage());
+    void preservesSupportedSourceTypesAndTiersIndependently() throws Exception {
+        var names = List.of("primary_official", "original_article", "trusted_research");
+        var original = ApprovedPackageRegistrationCli.validate(fixture()).documents().get(0);
+        for (int tier = 0; tier < names.size(); tier++) {
+            for (String sourceType : List.of("original_article", "official_statistic",
+                    "government_release", "central_bank_release", "research_report")) {
+                var body = packageBody();
+                document(body).put("selection_tier", tier);
+                documentEntry(body).put("sourceType", sourceType);
+                var pkg = ApprovedPackageRegistrationCli.validate(reseal(body));
+                var doc = pkg.documents().get(0);
+                assertEquals(names.get(tier), doc.selectionTier());
+                assertEquals(sourceType, doc.sourceType());
+                assertEquals(original.id(), doc.id());
+                assertEquals(original.contentHash(), doc.contentHash());
+                assertEquals(original.chunks(), doc.chunks());
+                assertEquals(original.targets(), doc.targets());
+                assertEquals(pkg.id(), ApprovedPackageRegistrationCli.inventory(pkg).get("packageId"));
+            }
+        }
+    }
+
+    @Test
+    void acceptsFormerlyRejectedMetadataFixturesWithoutRewritingThem() throws Exception {
+        var research = ApprovedPackageRegistrationCli.validate(issue36Fixture("tier1-research-package.json"));
+        assertEquals("original_article", research.documents().get(0).selectionTier());
+        assertEquals("research_report", research.documents().get(0).sourceType());
+        var article = ApprovedPackageRegistrationCli.validate(issue36Fixture("tier2-original-article-package.json"));
+        assertEquals("trusted_research", article.documents().get(0).selectionTier());
+        assertEquals("original_article", article.documents().get(0).sourceType());
+    }
+
+    @Test
+    void rejectsUnknownMetadataValuesWithValidPackageHash() throws Exception {
         var unknownTier = assertThrows(IllegalStateException.class,
                 () -> ApprovedPackageRegistrationCli.validate(issue36Fixture("tier3-unsupported-package.json")));
         assertEquals("unconfirmed selection_tier mapping: 3", unknownTier.getMessage());
+        for (int tier : List.of(-1, 99)) {
+            var body = packageBody();
+            document(body).put("selection_tier", tier);
+            String raw = reseal(body);
+            assertEquals("unconfirmed selection_tier mapping: " + tier,
+                    assertThrows(IllegalStateException.class,
+                            () -> ApprovedPackageRegistrationCli.validate(raw)).getMessage());
+        }
+        var body = packageBody();
+        documentEntry(body).put("sourceType", "unknown_source");
+        String raw = reseal(body);
+        assertEquals("unsupported sourceType unknown_source",
+                assertThrows(IllegalStateException.class,
+                        () -> ApprovedPackageRegistrationCli.validate(raw)).getMessage());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void independentMetadataDoesNotBypassInnerContentOrChunkIntegrity() throws Exception {
+        var body = packageBody();
+        document(body).put("selection_tier", 2);
+        documentEntry(body).put("sourceType", "central_bank_release");
+        document(body).put("content_hash", "0".repeat(64));
+        String badContent = reseal(body);
+        assertTrue(assertThrows(IllegalStateException.class,
+                () -> ApprovedPackageRegistrationCli.validate(badContent))
+                .getMessage().startsWith("document SHA-256 mismatch:"));
+
+        body = packageBody();
+        document(body).put("selection_tier", 2);
+        documentEntry(body).put("sourceType", "central_bank_release");
+        var chunk = (Map<String, Object>) ((List<?>) document(body).get("stored_chunks")).get(0);
+        chunk.put("text", "tampered chunk");
+        String badChunk = reseal(body);
+        assertTrue(assertThrows(IllegalStateException.class,
+                () -> ApprovedPackageRegistrationCli.validate(badChunk))
+                .getMessage().startsWith("chunk text differs from approved document:"));
     }
 
     @Test

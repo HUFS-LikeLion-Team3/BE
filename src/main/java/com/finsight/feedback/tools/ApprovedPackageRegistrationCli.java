@@ -153,10 +153,7 @@ public final class ApprovedPackageRegistrationCli {
                 case 2 -> "trusted_research";
                 default -> throw conflict("unconfirmed selection_tier mapping: " + tier);
             };
-            if (tier == 0 && !(Set.of("official_statistic", "government_release", "central_bank_release").contains(sourceType)))
-                throw conflict("primary_official tier with nonofficial source");
-            if (tier == 1 && !"original_article".equals(sourceType)) throw conflict("original_article tier mismatch");
-            if (tier == 2 && !"research_report".equals(sourceType)) throw conflict("trusted_research tier mismatch");
+            // AI owns source classification and retrieval priority; validate each supported value independently.
             String hash = text(d.get("content_hash"), "content_hash");
             if (!hash.matches("[0-9a-f]{64}")) throw conflict("invalid content_hash " + id);
             if (!urlHashes.add(url + "\0" + hash)) throw conflict("duplicate URL+hash in package");

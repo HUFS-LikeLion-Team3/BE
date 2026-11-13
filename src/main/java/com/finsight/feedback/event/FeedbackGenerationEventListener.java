@@ -32,7 +32,7 @@ public class FeedbackGenerationEventListener {
 
         feedbackGenerationService.generateInitial(
                 event.learningSessionId(),
-                event.submittedAt()
+                event.evidenceCutoffAt()
         );
     }
 

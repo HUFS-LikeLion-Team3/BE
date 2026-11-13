@@ -61,6 +61,9 @@ public class LearningSession {
     @Column(name = "submitted_at")
     private OffsetDateTime submittedAt;
 
+    @Column(name = "replay_reference_at")
+    private OffsetDateTime replayReferenceAt;
+
     @Column(name = "completed_at")
     private OffsetDateTime completedAt;
 
@@ -90,11 +93,25 @@ public class LearningSession {
 
     /** Freeze all prediction inputs and move to baseline collection state. */
     public void markSubmitted(OffsetDateTime submittedAt) {
+        markSubmitted(submittedAt, null);
+    }
+
+    public void markSubmitted(OffsetDateTime submittedAt, OffsetDateTime replayReferenceAt) {
         if (this.status != LearningStatus.drafting) {
             throw new IllegalStateException("Session already submitted");
         }
         this.submittedAt = submittedAt;
+        this.replayReferenceAt = replayReferenceAt;
         this.status = LearningStatus.baseline_pending;
+    }
+
+    public static OffsetDateTime outcomeReferenceAt(LearningSession session) {
+        OffsetDateTime referenceAt = session.getReplayReferenceAt();
+        return referenceAt == null ? session.getSubmittedAt() : referenceAt;
+    }
+
+    public static boolean supportsOutcomeCollection(LearningSession session) {
+        return session.getSessionType() == SessionType.live || session.getReplayReferenceAt() != null;
     }
 
     /**
@@ -109,6 +126,10 @@ public class LearningSession {
                 || (this.status == LearningStatus.observing
                     && target == LearningStatus.reflection_pending)) {
             this.status = target;
+            if (sessionType == SessionType.replay && target == LearningStatus.reflection_pending
+                    && resultsRevealedAt == null) {
+                resultsRevealedAt = OffsetDateTime.now(KOREA_ZONE);
+            }
         }
     }
 
@@ -124,9 +145,14 @@ public class LearningSession {
     }
 
     public static LearningSession create(UUID userId, UUID newsId) {
+        return create(userId, newsId, SessionType.live);
+    }
+
+    public static LearningSession create(UUID userId, UUID newsId, SessionType sessionType) {
         LearningSession session = new LearningSession();
         session.userId = userId;
         session.newsId = newsId;
+        session.sessionType = sessionType;
         return session;
     }
 

@@ -5,6 +5,7 @@ import com.finsight.global.exception.ApiException;
 import com.finsight.learning.dto.LearningSessionDetailResponse;
 import com.finsight.learning.dto.LearningSessionListItemResponse;
 import com.finsight.learning.entity.LearningSession;
+import com.finsight.learning.entity.LearningSession.SessionType;
 import com.finsight.learning.repository.LearningSessionRepository;
 import com.finsight.news.entity.News;
 import com.finsight.news.repository.NewsRepository;
@@ -33,10 +34,11 @@ public class LearningSessionService {
             UUID newsId,
             String sessionType
     ) {
-        // Replay creation is not part of P0. Never change an existing session on retry.
-        if (!"live".equals(sessionType)) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "올바르지 않은 학습 세션 유형입니다.");
-        }
+        SessionType requestedType = switch (sessionType == null ? "" : sessionType) {
+            case "live" -> SessionType.live;
+            case "replay" -> SessionType.replay;
+            default -> throw new ApiException(HttpStatus.BAD_REQUEST, "올바르지 않은 학습 세션 유형입니다.");
+        };
         if (newsId == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "newsId는 필수입니다.");
         }
@@ -52,9 +54,11 @@ public class LearningSessionService {
                 learningSessionRepository.findByUserIdAndNewsId(userId, newsId);
         if (existing.isPresent()) {
             LearningSession session = existing.get();
-            if (session.getSessionType() != LearningSession.SessionType.live) {
+            if (session.getSessionType() != requestedType) {
                 throw new ApiException(HttpStatus.CONFLICT,
-                        "기존 학습 세션의 유형과 일치하지 않습니다.");
+                        requestedType == SessionType.replay
+                                ? "해당 뉴스는 이미 Live 학습 이력이 있어 Replay 세션을 생성할 수 없습니다."
+                                : "기존 학습 세션의 유형과 일치하지 않습니다.");
             }
             // Existing records remain accessible even if the news is archived
             // after the initial creation; do not reset its status or timestamps.
@@ -64,12 +68,15 @@ public class LearningSessionService {
         News news = newsRepository.findByIdAndStatus(newsId, "published")
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
                         "해당 뉴스를 찾을 수 없습니다."));
-        if (!"live".equals(news.getContentType())) {
+        if (!requestedType.name().equals(news.getContentType())
+                || (requestedType == SessionType.replay
+                    && !"eligible".equals(news.getReplayStatus())
+                    && !"featured".equals(news.getReplayStatus()))) {
             throw new ApiException(HttpStatus.BAD_REQUEST,
                     "현재 학습할 수 없는 뉴스입니다.");
         }
 
-        LearningSession session = LearningSession.create(userId, newsId);
+        LearningSession session = LearningSession.create(userId, newsId, requestedType);
         return new SessionResult(learningSessionRepository.saveAndFlush(session), true);
     }
 

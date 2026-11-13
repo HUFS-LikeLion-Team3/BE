@@ -96,13 +96,19 @@ public class FeedbackGenerationService {
         UUID feedbackId = null;
 
         try {
+            AiRagJob initialJob = stage == AiFeedback.FeedbackStage.FINAL
+                    ? jobRepository.findBySessionIdAndStage(sessionId, "initial").orElse(null)
+                    : null;
+            AiFeedback initialFeedback = initialJob == null ? null
+                    : feedbackRepository.findById(initialJob.getFeedbackId()).orElseThrow();
+            String frozenPackageId = initialJob == null ? packageId : initialJob.getPackageId();
             feedbackId = persistence.prepare(
                     sessionId,
                     stage,
-                    VERSION,
+                    initialFeedback == null ? VERSION : initialFeedback.getVersion(),
                     requestId,
-                    promptVersion,
-                    policyVersion,
+                    initialFeedback == null ? promptVersion : initialFeedback.getPromptVersion(),
+                    initialFeedback == null ? policyVersion : initialFeedback.getPolicyVersion(),
                     cutoff
             );
 
@@ -137,10 +143,7 @@ public class FeedbackGenerationService {
                         frozen
                 );
 
-                UUID initialJobId =
-                        stage == AiFeedback.FeedbackStage.FINAL
-                                ? initialJobId(sessionId)
-                                : null;
+                UUID initialJobId = initialJob == null ? null : initialJob.getJobId();
 
                 String request =
                         stage == AiFeedback.FeedbackStage.FINAL
@@ -149,7 +152,7 @@ public class FeedbackGenerationService {
                                 : contractMapper.envelope(
                                 feedback,
                                 frozen,
-                                packageId,
+                                frozenPackageId,
                                 initialJobId
                         );
 
@@ -158,7 +161,7 @@ public class FeedbackGenerationService {
                         sessionId,
                         stage.getValue(),
                         feedback.getRequestId(),
-                        packageId,
+                        frozenPackageId,
                         request
                 );
             }

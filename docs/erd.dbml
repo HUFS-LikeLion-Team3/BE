@@ -788,7 +788,7 @@ Table ai_feedback_references {
   sort_order integer [not null]
 
   indexes {
-    (ai_feedback_id, source_document_chunk_id) [unique]
+    (ai_feedback_id, source_document_chunk_id) [note: '비유일 검색 인덱스: 동일 조각의 서로 다른 실제 인용 허용']
     (ai_feedback_id, sort_order) [unique]
   }
 }

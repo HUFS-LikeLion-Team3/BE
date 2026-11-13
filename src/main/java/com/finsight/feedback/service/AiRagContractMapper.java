@@ -282,6 +282,13 @@ public class AiRagContractMapper {
                     );
                 }
 
+                // No observed value means no observed unit. The snapshot
+                // can carry the target's unit even when status=unavailable,
+                // but the AI FINAL contract requires result.unit == null.
+                if ("unavailable".equals(mapped.get("status"))) {
+                    mapped.put("unit", null);
+                }
+
                 rows.add(mapped);
             }
         }

@@ -1,3 +1,4 @@
+
 package com.finsight.feedback.service;
 
 import com.finsight.feedback.client.AiRagJobClient;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -30,8 +32,10 @@ public class FeedbackGenerationService {
     private final AiFeedbackInputSnapshotRepository snapshotRepository;
     private final AiRagJobRepository jobRepository;
     private final AiRagJobStore jobStore;
+    private final AiRagDispatchLeaseService dispatchLease;
     private final AiRagContractMapper contractMapper;
     private final AiRagJobClient ragClient;
+    private final ApprovedFeedbackPersistenceService approvedPersistence;
 
     @Value("${finsight.ai.prompt-version:feedback-p0-v1}")
     private String promptVersion;
@@ -42,10 +46,7 @@ public class FeedbackGenerationService {
     @Value("${AI_RAG_PACKAGE_ID:}")
     private String packageId;
 
-    public void generateInitial(
-            UUID sessionId,
-            OffsetDateTime submittedAt
-    ) {
+    public void generateInitial(UUID sessionId, OffsetDateTime submittedAt) {
         createOrResume(
                 sessionId,
                 AiFeedback.FeedbackStage.INITIAL,
@@ -59,30 +60,43 @@ public class FeedbackGenerationService {
             UUID reflectionSubmissionId,
             OffsetDateTime completedAt
     ) {
+        String requestId =
+                "feedback:final:" + sessionId + ":" + reflectionSubmissionId;
+
+        // Duplicate FINAL events must reuse the original frozen work.
+        AiRagJob existing = jobRepository
+                .findBySessionIdAndStage(sessionId, "final")
+                .orElse(null);
+
+        if (existing != null) {
+            if (!requestId.equals(existing.getBeRequestId())) {
+                log.warn(
+                        "Conflicting FINAL event ignored. sessionId={}",
+                        sessionId
+                );
+                return;
+            }
+
+            resumeFrozen(existing.getFeedbackId());
+            return;
+        }
+
         OffsetDateTime cutoff;
 
         try {
-            cutoff = finalBuilder.resolveCutoff(
-                    sessionId,
-                    completedAt
-            );
-
+            cutoff = finalBuilder.resolveCutoff(sessionId, completedAt);
         } catch (Exception ex) {
             log.warn(
-                    "FINAL cutoff unavailable; preserving final submission intent. sessionId={}",
+                    "FINAL cutoff unavailable on first attempt. sessionId={}",
                     sessionId
             );
-
             cutoff = completedAt;
         }
 
         createOrResume(
                 sessionId,
                 AiFeedback.FeedbackStage.FINAL,
-                "feedback:final:"
-                        + sessionId
-                        + ":"
-                        + reflectionSubmissionId,
+                requestId,
                 cutoff
         );
     }
@@ -112,13 +126,12 @@ public class FeedbackGenerationService {
                     cutoff
             );
 
-            AiFeedback feedback =
-                    feedbackRepository
-                            .findById(feedbackId)
-                            .orElseThrow();
+            AiFeedback feedback = feedbackRepository
+                    .findById(feedbackId)
+                    .orElseThrow();
 
-            if (feedback.getStatus()
-                    == AiFeedback.FeedbackStatus.ready) {
+            if (feedback.getStatus() == AiFeedback.FeedbackStatus.ready
+                    || feedback.getStatus() == AiFeedback.FeedbackStatus.failed) {
                 return;
             }
 
@@ -127,33 +140,27 @@ public class FeedbackGenerationService {
                     .orElse(null);
 
             if (job == null) {
-                FeedbackGenerationInput frozen =
-                        stage == AiFeedback.FeedbackStage.INITIAL
-                                ? initialBuilder.buildInitial(
-                                sessionId,
-                                cutoff
-                        )
-                                : finalBuilder.build(
-                                sessionId,
-                                cutoff
-                        );
-
-                persistence.saveSnapshot(
+                FeedbackGenerationInput frozen = loadOrFreezeInput(
                         feedbackId,
-                        frozen
+                        sessionId,
+                        stage,
+                        cutoff
                 );
 
-                UUID initialJobId = initialJob == null ? null : initialJob.getJobId();
-
-                String request =
+                UUID firstJobId =
                         stage == AiFeedback.FeedbackStage.FINAL
-                                && initialJobId == null
+                                ? initialJobId(sessionId)
+                                : null;
+
+                String requestJson =
+                        stage == AiFeedback.FeedbackStage.FINAL
+                                && firstJobId == null
                                 ? null
                                 : contractMapper.envelope(
                                 feedback,
                                 frozen,
                                 frozenPackageId,
-                                initialJobId
+                                firstJobId
                         );
 
                 job = jobStore.ensure(
@@ -162,107 +169,196 @@ public class FeedbackGenerationService {
                         stage.getValue(),
                         feedback.getRequestId(),
                         frozenPackageId,
-                        request
+                        requestJson
                 );
             }
 
-            persistence.claim(feedbackId);
+            // Already accepted jobs belong to the #26 polling/delivery path.
+            if (job.getJobId() != null
+                    || "reconciliation_required".equals(job.getState())
+                    || "stored".equals(job.getState())) {
+                return;
+            }
 
-            submitFrozen(job.getFeedbackId());
+            // FINAL waits until INITIAL has an accepted AI job ID.
+            if (job.getRequestJson() == null) {
+                return;
+            }
+
+            dispatchFrozenIfOwned(feedbackId);
 
         } catch (Exception ex) {
-            log.error(
-                    "AI/RAG job preparation failed. sessionId={}, stage={}",
+            handlePreparationFailure(
+                    feedbackId,
                     sessionId,
                     stage,
                     ex
             );
+        }
+    }
 
-            if (feedbackId != null
-                    && jobRepository.existsById(feedbackId)) {
-                jobStore.uncertain(
-                        feedbackId,
-                        errorCode(ex)
-                );
+    private FeedbackGenerationInput loadOrFreezeInput(
+            UUID feedbackId,
+            UUID sessionId,
+            AiFeedback.FeedbackStage stage,
+            OffsetDateTime cutoff
+    ) {
+        var saved = snapshotRepository.findByAiFeedbackId(feedbackId);
 
-            } else if (feedbackId != null) {
-                try {
-                    persistence.fail(
-                            feedbackId,
-                            errorCode(ex)
-                    );
+        if (saved.isPresent()) {
+            return fromSnapshot(saved.get(), stage);
+        }
 
-                } catch (Exception secondary) {
-                    log.error(
-                            "Feedback failure recording failed",
-                            secondary
-                    );
-                }
+        FeedbackGenerationInput built =
+                stage == AiFeedback.FeedbackStage.INITIAL
+                        ? initialBuilder.buildInitial(sessionId, cutoff)
+                        : finalBuilder.build(sessionId, cutoff);
+
+        try {
+            persistence.saveSnapshot(feedbackId, built);
+        } catch (RuntimeException ex) {
+            // A concurrent event may have saved the first snapshot.
+            // Reuse that snapshot instead of replacing it.
+            if (snapshotRepository.findByAiFeedbackId(feedbackId).isEmpty()) {
+                throw ex;
             }
         }
+
+        return fromSnapshot(
+                snapshotRepository.findByAiFeedbackId(feedbackId)
+                        .orElseThrow(() ->
+                                new IllegalStateException(
+                                        "input_snapshot_missing"
+                                )
+                        ),
+                stage
+        );
+    }
+
+    private FeedbackGenerationInput fromSnapshot(
+            AiFeedbackInputSnapshot snapshot,
+            AiFeedback.FeedbackStage stage
+    ) {
+        Map<String, Object> request = snapshot.getRequestSnapshot();
+
+        String cutoffKey =
+                stage == AiFeedback.FeedbackStage.FINAL
+                        ? "outcomeCutoffAt"
+                        : "inputCutoffAt";
+
+        if (request == null
+                || !(request.get(cutoffKey) instanceof String cutoff)) {
+            throw new IllegalStateException("input_snapshot_missing");
+        }
+
+        return new FeedbackGenerationInput(
+                OffsetDateTime.parse(cutoff),
+                request,
+                snapshot.getPredictionSnapshot(),
+                snapshot.getMarketBaselineSnapshot(),
+                snapshot.getMarketResultSnapshot(),
+                snapshot.getReflectionSnapshot(),
+                snapshot.getInputHash(),
+                Set.of(),
+                Map.of()
+        );
+    }
+
+    private void resumeFrozen(UUID feedbackId) {
+        try {
+            AiFeedback feedback = feedbackRepository
+                    .findById(feedbackId)
+                    .orElseThrow();
+
+            if (feedback.getStatus() == AiFeedback.FeedbackStatus.ready
+                    || feedback.getStatus() == AiFeedback.FeedbackStatus.failed) {
+                return;
+            }
+
+            AiRagJob job = jobRepository
+                    .findById(feedbackId)
+                    .orElseThrow();
+
+            if (job.getJobId() != null
+                    || job.getRequestJson() == null
+                    || "reconciliation_required".equals(job.getState())
+                    || "stored".equals(job.getState())) {
+                return;
+            }
+
+            dispatchFrozenIfOwned(feedbackId);
+
+        } catch (Exception ex) {
+            handlePreparationFailure(feedbackId, null, null, ex);
+        }
+    }
+
+    private void handlePreparationFailure(
+            UUID feedbackId,
+            UUID sessionId,
+            AiFeedback.FeedbackStage stage,
+            Exception ex
+    ) {
+        log.warn(
+                "AI/RAG preparation or submission deferred. "
+                        + "feedbackId={}, sessionId={}, stage={}, error={}",
+                feedbackId,
+                sessionId,
+                stage,
+                ex.getClass().getSimpleName()
+        );
+
+        // Temporary failures must not change an existing generating job to failed.
+        if (feedbackId != null && jobRepository.existsById(feedbackId)) {
+
+            if (ex instanceof AiRagJobClient.AiRagHttpException http
+                    && http.getStatusCode() == 409) {
+                // Remote immutable request conflict requires reconciliation.
+                // Local duplicate event conflicts do not invalidate the job.
+                jobStore.uncertain(feedbackId, http.getErrorCode());
+            }
+
+            return;
+        }
+
+        // Recovery for feedback without a snapshot/job is handled by the
+        // subsequent durable-intent recovery work.
     }
 
     public void resumeFinal(UUID sessionId) {
         AiRagJob job = jobRepository
-                .findBySessionIdAndStage(
-                        sessionId,
-                        "final"
-                )
+                .findBySessionIdAndStage(sessionId, "final")
                 .orElse(null);
 
-        if (job == null || job.getJobId() != null) {
+        if (job == null
+                || job.getJobId() != null
+                || "reconciliation_required".equals(job.getState())) {
             return;
         }
 
         if (job.getRequestJson() == null) {
-            UUID firstJob = initialJobId(sessionId);
+            UUID firstJobId = initialJobId(sessionId);
 
-            if (firstJob == null) {
+            if (firstJobId == null) {
                 return;
             }
 
-            AiFeedback feedback =
-                    feedbackRepository
-                            .findById(job.getFeedbackId())
-                            .orElseThrow();
+            AiFeedback feedback = feedbackRepository
+                    .findById(job.getFeedbackId())
+                    .orElseThrow();
 
-            AiFeedbackInputSnapshot snapshot =
-                    snapshotRepository
-                            .findByAiFeedbackId(feedback.getId())
-                            .orElseThrow();
-
-            Map<String, Object> request =
-                    snapshot.getRequestSnapshot();
-
-            Object cutoffValue =
-                    request.get("outcomeCutoffAt");
-
-            if (!(cutoffValue instanceof String)) {
-                throw new IllegalStateException(
-                        "Frozen FINAL outcomeCutoffAt is missing"
-                );
-            }
-
-            FeedbackGenerationInput frozen =
-                    new FeedbackGenerationInput(
-                            OffsetDateTime.parse(
-                                    (String) cutoffValue
-                            ),
-                            request,
-                            snapshot.getPredictionSnapshot(),
-                            snapshot.getMarketBaselineSnapshot(),
-                            snapshot.getMarketResultSnapshot(),
-                            snapshot.getReflectionSnapshot(),
-                            snapshot.getInputHash(),
-                            java.util.Set.of(),
-                            java.util.Map.of()
-                    );
+            AiFeedbackInputSnapshot snapshot = snapshotRepository
+                    .findByAiFeedbackId(feedback.getId())
+                    .orElseThrow();
 
             String json = contractMapper.envelope(
                     feedback,
-                    frozen,
+                    fromSnapshot(
+                            snapshot,
+                            AiFeedback.FeedbackStage.FINAL
+                    ),
                     job.getPackageId(),
-                    firstJob
+                    firstJobId
             );
 
             jobStore.ensure(
@@ -275,17 +371,34 @@ public class FeedbackGenerationService {
             );
         }
 
-        submitFrozen(job.getFeedbackId());
+        resumeFrozen(job.getFeedbackId());
     }
 
     private UUID initialJobId(UUID sessionId) {
         return jobRepository
-                .findBySessionIdAndStage(
-                        sessionId,
-                        "initial"
-                )
+                .findBySessionIdAndStage(sessionId, "initial")
                 .map(AiRagJob::getJobId)
                 .orElse(null);
+    }
+
+    /** A durable lease excludes concurrent BE instances without holding a DB
+     * transaction open while the external AI HTTP request is in flight. */
+    private void dispatchFrozenIfOwned(UUID feedbackId) {
+        UUID owner = dispatchLease.tryClaim(feedbackId);
+        if (owner == null) {
+            return;
+        }
+        try {
+            submitFrozen(feedbackId);
+        } finally {
+            // A crash leaves the lease for restart recovery; ordinary failures
+            // release it so the next scheduled scan can query the same request.
+            try {
+                dispatchLease.release(feedbackId, owner);
+            } catch (RuntimeException ex) {
+                log.warn("Dispatch lease release deferred. feedbackId={}", feedbackId, ex);
+            }
+        }
     }
 
     private void submitFrozen(UUID feedbackId) {
@@ -294,7 +407,8 @@ public class FeedbackGenerationService {
                 .orElseThrow();
 
         if (job.getJobId() != null
-                || job.getRequestJson() == null) {
+                || job.getRequestJson() == null
+                || "reconciliation_required".equals(job.getState())) {
             return;
         }
 
@@ -304,79 +418,72 @@ public class FeedbackGenerationService {
             receipt = ragClient.findByBeRequestId(
                     job.getBeRequestId()
             );
-
         } catch (AiRagJobClient.AiRagHttpException ex) {
             if (ex.getStatusCode() != 404) {
                 throw ex;
             }
 
-            receipt = ragClient.submitFrozenJob(
-                    job.getRequestJson()
-            );
+            // Only a confirmed 404 permits resubmitting the same frozen body.
+            receipt = ragClient.submitFrozenJob(job.getRequestJson());
         }
 
         Object rawJobId = receipt.get("jobId");
 
         if (!(rawJobId instanceof String id)) {
+            throw new IllegalStateException("AI receipt has no jobId");
+        }
+
+        if (receipt.get("beRequestId") != null
+                && !job.getBeRequestId().equals(receipt.get("beRequestId"))) {
+            throw new IllegalStateException("request_input_conflict");
+        }
+
+        if (receipt.get("feedbackId") != null
+                && !job.getFeedbackId().toString()
+                .equals(receipt.get("feedbackId"))) {
             throw new IllegalStateException(
-                    "AI receipt has no jobId"
+                    "feedback_or_session_stage_conflict"
             );
         }
 
         UUID aiJobId = UUID.fromString(id);
 
         String status = String.valueOf(
-                receipt.getOrDefault(
-                        "status",
-                        "received"
-                )
+                receipt.getOrDefault("status", "received")
         );
 
-        jobStore.accepted(
-                feedbackId,
-                aiJobId,
-                status
-        );
+        jobStore.accepted(feedbackId, aiJobId, status);
 
         if ("initial".equals(job.getStage())) {
             try {
                 resumeFinal(job.getSessionId());
-
-            } catch (Exception e) {
-                log.error(
-                        "Deferred FINAL submission failed. sessionId={}",
+            } catch (Exception ex) {
+                log.warn(
+                        "Deferred FINAL resume failed. sessionId={}",
                         job.getSessionId(),
-                        e
+                        ex
                 );
             }
         }
     }
 
-    public Map<String, Object> fetchJobStatus(
-            UUID feedbackId
-    ) {
+    public Map<String, Object> fetchJobStatus(UUID feedbackId) {
         AiRagJob stored = jobRepository
                 .findById(feedbackId)
                 .orElseThrow();
 
         if (stored.getJobId() == null) {
-            throw new IllegalStateException(
-                    "AI job not accepted"
-            );
+            throw new IllegalStateException("AI job not accepted");
         }
 
-        Map<String, Object> status =
-                ragClient.getJobStatus(
-                        stored.getJobId()
-                );
+        Map<String, Object> status = ragClient.getJobStatus(
+                stored.getJobId()
+        );
 
         jobStore.updateStatus(
                 feedbackId,
-                String.valueOf(
-                        status.get("status")
-                ),
-                status.get("ragSnapshotHash")
-                        instanceof String hash
+                String.valueOf(status.get("status")),
+                status.get("ragSnapshotHash") instanceof String hash
                         ? hash
                         : null
         );
@@ -384,37 +491,58 @@ public class FeedbackGenerationService {
         return status;
     }
 
-    public Map<String, Object> fetchApprovedResult(
-            UUID feedbackId
-    ) {
+    public Map<String, Object> fetchApprovedResult(UUID feedbackId) {
         AiRagJob stored = jobRepository
                 .findById(feedbackId)
                 .orElseThrow();
 
         if (stored.getJobId() == null) {
-            throw new IllegalStateException(
-                    "AI job not accepted"
+            throw new IllegalStateException("AI job not accepted");
+        }
+
+        if (stored.getApprovedResultJson() != null) {
+            return ragClient.parseResponse(
+                    stored.getApprovedResultJson()
             );
         }
 
-        return ragClient.getApprovedResult(
+        String rawJson = ragClient.getApprovedResultRaw(
                 stored.getJobId()
         );
+
+        Map<String, Object> response;
+
+        try {
+            response = ragClient.parseResponse(rawJson);
+        } catch (RuntimeException ex) {
+            // Preserve even malformed original JSON for diagnosis.
+            jobStore.captureApprovedResult(
+                    feedbackId,
+                    stored.getJobId(),
+                    rawJson,
+                    null
+            );
+            throw ex;
+        }
+
+        String hash =
+                response.get("resultHash") instanceof String value
+                        && !value.isBlank()
+                        ? value
+                        : null;
+
+        jobStore.captureApprovedResult(
+                feedbackId,
+                stored.getJobId(),
+                rawJson,
+                hash
+        );
+
+        return response;
     }
 
-    private String errorCode(Exception ex) {
-        if (ex instanceof
-                AiRagJobClient.AiRagHttpException http) {
-            return http.getErrorCode();
-        }
-
-        String message = ex.getMessage();
-
-        if ("initial_submission_changed".equals(message)
-                || "initial_snapshot_missing".equals(message)) {
-            return message;
-        }
-
-        return "provider_completion_unknown";
+    public boolean storeApprovedResult(UUID feedbackId) {
+        fetchApprovedResult(feedbackId);
+        return approvedPersistence.persistCaptured(feedbackId);
     }
 }

@@ -10,7 +10,15 @@
 
 200 응답은 위 요청과 동일한 형식이며 id는 포함하지 않는다. 요청 목록으로 현재 사용자 관심사를 트랜잭션 내에서 전체 교체한다. 빈 배열은 모두 해제한다. 사용자 행을 잠가 동시 교체를 직렬화하며 삭제를 flush한 후 삽입해 ERD의 `(user_id, interest_type, interest_key)` 유일 제약을 지킨다. 온보딩 완료 시간은 수정하지 않는다.
 
-시장 허용 키는 `korea`, `us`다. 현재 등록 주제 키는 `semiconductor`, `rate`이며 UserService의 TOPIC_KEYS로 관리한다(ERD에 별도 주제 테이블 없음). 유형·키 누락, 미등록 값, 중복 조합 및 잘못된 JSON은 400 `유효하지 않은 관심사 정보입니다.`를 반환한다. `both`, `all`은 허용하지 않는다. 저장된 시장 키는 추천 조회 시 market_targets의 `korea_equity`, `us_equity`와 매칭한다.
+시장 허용 키는 `korea`, `us`다. 주제는 관심 설정 화면과 동일한 `rate`(금리), `exchange_rate`(환율),
+`semiconductor`(반도체), `energy`(에너지), `price`(물가), `employment`(고용) 6개이며
+UserService의 TOPIC_KEYS로 관리한다(ERD에 별도 주제 테이블 없음).
+여러 주제와 두 시장을 함께 저장할 수 있다. 유형·키 누락, 미등록 값, 중복 조합 및 잘못된 JSON은
+400 `유효하지 않은 관심사 정보입니다.`를 반환한다. `both`, `all`은 허용하지 않는다.
+저장된 시장 키는 추천 조회 시 market_targets의 `korea_equity`, `us_equity`와 매칭한다.
+`GET /api/v1/news?sort=recommended`는 저장한 주제 키와 `news.category`의 일치 개수로 추천 점수를 더한다.
+비관심 뉴스는 제외하지 않고 순서만 조정한다. 이 허용 목록은 뉴스 탐색 category 필터를 제한하는 목록이 아니다.
+BE 배포 후 FE의 환율·에너지·물가·고용 선택 비활성화와 준비 중 표시를 해제할 수 있다.
 
 ## 조회
 

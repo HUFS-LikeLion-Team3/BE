@@ -42,3 +42,15 @@ dependencies {
 tasks.named('test') {
 	useJUnitPlatform()
 }
+
+// #26: Explicit operator-run command; never invoked by bootRun/test/scheduler.
+// Example: ./gradlew issue26Package -Pissue26Mode=check -Pissue26File=/path/demo-package.json
+tasks.register('issue26Package', JavaExec) {
+    group = 'verification'
+    description = 'Validate or import the AI-issued immutable approved package (operator only)'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.finsight.feedback.tools.ApprovedPackageRegistrationCli'
+    def mode = providers.gradleProperty('issue26Mode').orElse('check')
+    def file = providers.gradleProperty('issue26File').orElse('')
+    args = mode.get() == 'register' ? ['register'] : [mode.get(), file.get()]
+}

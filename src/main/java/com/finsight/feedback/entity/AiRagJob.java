@@ -1,3 +1,4 @@
+
 package com.finsight.feedback.entity;
 
 import jakarta.persistence.*;
@@ -5,6 +6,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.OffsetDateTime;
+import java.time.Duration;
 import java.util.UUID;
 
 @Entity
@@ -50,14 +52,38 @@ public class AiRagJob {
     private String packageId;
 
     @Lob
-    @Column(name = "request_json", columnDefinition = "LONGTEXT")
+    @Column(
+            name = "request_json",
+            columnDefinition = "LONGTEXT"
+    )
     private String requestJson;
 
     @Column(name = "job_id", unique = true)
     private UUID jobId;
 
+    // A durable, expiring lease allows another BE process to recover after a crash.
+    // The lease never changes the immutable frozen request body.
+    @Column(name = "dispatch_owner", length = 36)
+    private String dispatchOwner;
+
+    @Column(name = "dispatch_lease_until")
+    private OffsetDateTime dispatchLeaseUntil;
+
     @Column(name = "rag_snapshot_hash", length = 64)
     private String ragSnapshotHash;
+
+    @Lob
+    @Column(
+            name = "approved_result_json",
+            columnDefinition = "LONGTEXT"
+    )
+    private String approvedResultJson;
+
+    @Column(name = "result_hash", length = 128)
+    private String resultHash;
+
+    @Column(name = "approved_result_captured_at")
+    private OffsetDateTime approvedResultCapturedAt;
 
     @Column(name = "state", nullable = false, length = 32)
     private String state;
@@ -90,6 +116,7 @@ public class AiRagJob {
         job.beRequestId = requestId;
         job.packageId = packageId;
         job.requestJson = requestJson;
+
         job.state = requestJson == null
                 ? "awaiting_initial_job"
                 : "frozen";
@@ -97,12 +124,42 @@ public class AiRagJob {
         return job;
     }
 
+    private boolean isTerminalOrManualState() {
+        return "stored".equals(state)
+                || "blocked".equals(state)
+                || "failed".equals(state)
+                || "reconciliation_required".equals(state);
+    }
+
+    /**
+     * Preserve the original request JSON.
+     * A manual-reconciliation job must never be
+     * automatically restored by freezing new input.
+     */
     public void freeze(String requestJson) {
+        if (requestJson == null || requestJson.isBlank()) {
+            throw new IllegalArgumentException(
+                    "frozen_request_empty"
+            );
+        }
+
         if (this.requestJson != null
                 && !this.requestJson.equals(requestJson)) {
             throw new IllegalStateException(
                     "request_input_conflict"
             );
+        }
+
+        if (isTerminalOrManualState()) {
+            if (this.requestJson == null) {
+                throw new IllegalStateException(
+                        "manual_reconciliation_required"
+                );
+            }
+
+            // Identical existing JSON is safe to observe,
+            // but a terminal state must not be reset.
+            return;
         }
 
         if (this.requestJson == null) {
@@ -114,34 +171,208 @@ public class AiRagJob {
         }
     }
 
+    /**
+     * Only one worker may perform GET by beRequestId / POST for an unaccepted
+     * frozen job. Call under a database write lock, in a committed transaction.
+     * Expired leases are reclaimable after an instance crash.
+     */
+    public boolean claimDispatch(
+            UUID owner,
+            OffsetDateTime now,
+            Duration leaseDuration
+    ) {
+        if (owner == null || now == null || leaseDuration == null
+                || leaseDuration.isNegative() || leaseDuration.isZero()) {
+            throw new IllegalArgumentException("dispatch_lease_invalid");
+        }
+        if (jobId != null || requestJson == null || requestJson.isBlank()
+                || !"frozen".equals(state)) {
+            return false;
+        }
+        if (dispatchOwner != null && dispatchLeaseUntil != null
+                && dispatchLeaseUntil.isAfter(now)) {
+            return false;
+        }
+        dispatchOwner = owner.toString();
+        dispatchLeaseUntil = now.plus(leaseDuration);
+        return true;
+    }
+
+    /** An old worker must never release a newer worker's recovered lease. */
+    public void releaseDispatch(UUID owner) {
+        if (owner != null && owner.toString().equals(dispatchOwner)) {
+            dispatchOwner = null;
+            dispatchLeaseUntil = null;
+        }
+    }
+
+    /**
+     * Duplicate receipts for the same AI job are idempotent.
+     * An older receipt must not overwrite a newer status.
+     */
     public void accepted(UUID jobId, String aiStatus) {
-        if (this.jobId != null
-                && !this.jobId.equals(jobId)) {
+        if (jobId == null) {
+            throw new IllegalArgumentException(
+                    "ai_job_id_missing"
+            );
+        }
+
+        if (this.jobId != null) {
+            if (!this.jobId.equals(jobId)) {
+                throw new IllegalStateException(
+                        "AI job ID mismatch"
+                );
+            }
+
+            // Already accepted, blocked or stored.
+            // Preserve the current state and status.
+            return;
+        }
+
+        if (isTerminalOrManualState()) {
             throw new IllegalStateException(
-                    "AI job ID mismatch"
+                    "manual_reconciliation_required"
             );
         }
 
         this.jobId = jobId;
+        this.dispatchOwner = null;
+        this.dispatchLeaseUntil = null;
         this.aiStatus = aiStatus;
         this.state = "accepted";
         this.failureCode = null;
     }
 
+    /**
+     * Late failures cannot regress a stored result
+     * or replace an existing manual-reconciliation reason.
+     */
     public void uncertain(String code) {
+        if (isTerminalOrManualState()) {
+            return;
+        }
+
         this.state = "reconciliation_required";
         this.failureCode = code;
+        this.dispatchOwner = null;
+        this.dispatchLeaseUntil = null;
     }
 
+    /**
+     * Record polling metadata without changing the
+     * identity of an already established RAG snapshot.
+     */
     public void updateStatus(
             String status,
             String ragHash
     ) {
-        this.aiStatus = status;
+        if (isTerminalOrManualState()) {
+            return;
+        }
 
         if (ragHash != null && !ragHash.isBlank()) {
+            if (this.ragSnapshotHash != null
+                    && !this.ragSnapshotHash.equals(ragHash)) {
+                throw new IllegalStateException(
+                        "rag_snapshot_hash_conflict"
+                );
+            }
+
             this.ragSnapshotHash = ragHash;
         }
+
+        this.aiStatus = status;
+    }
+
+    /**
+     * Approved raw JSON and its result hash are immutable.
+     * Store them before any citation or source validation.
+     */
+    public void captureApprovedResult(
+            UUID expectedJobId,
+            String responseJson,
+            String hash
+    ) {
+        if (jobId == null || !jobId.equals(expectedJobId)) {
+            throw new IllegalStateException(
+                    "approved_result_job_mismatch"
+            );
+        }
+
+        if (responseJson == null || responseJson.isBlank()) {
+            throw new IllegalArgumentException(
+                    "approved_result_empty"
+            );
+        }
+
+        if (approvedResultJson != null
+                && !approvedResultJson.equals(responseJson)) {
+            throw new IllegalStateException(
+                    "approved_result_conflict"
+            );
+        }
+
+        if (resultHash != null
+                && hash != null
+                && !resultHash.equals(hash)) {
+            throw new IllegalStateException(
+                    "approved_result_hash_conflict"
+            );
+        }
+
+        if (approvedResultJson == null) {
+            approvedResultJson = responseJson;
+            approvedResultCapturedAt = OffsetDateTime.now();
+        }
+
+        if (resultHash == null
+                && hash != null
+                && !hash.isBlank()) {
+            resultHash = hash;
+        }
+    }
+
+    /**
+     * A delayed blocked response must not override
+     * stored or manual-reconciliation state.
+     */
+    public void markDeliveryBlocked(String reason) {
+        if ("stored".equals(state)
+                || "reconciliation_required".equals(state)
+                || "failed".equals(state)) {
+            return;
+        }
+
+        if (approvedResultJson == null) {
+            throw new IllegalStateException(
+                    "approved_result_not_captured"
+            );
+        }
+
+        state = "blocked";
+        failureCode = reason;
+    }
+
+    /**
+     * Mark stored only after the AI delivery receipt
+     * has been acknowledged with the original result hash.
+     */
+    public void markDeliveryStored(
+            UUID expectedJobId,
+            String expectedResultHash
+    ) {
+        if (jobId == null
+                || !jobId.equals(expectedJobId)
+                || approvedResultJson == null
+                || resultHash == null
+                || !resultHash.equals(expectedResultHash)) {
+            throw new IllegalStateException(
+                    "approved_delivery_identity_mismatch"
+            );
+        }
+
+        state = "stored";
+        failureCode = null;
     }
 
     @PrePersist

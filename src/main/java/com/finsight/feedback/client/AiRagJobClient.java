@@ -93,11 +93,49 @@ public class AiRagJobClient {
     }
 
     public Map<String, Object> getApprovedResult(UUID jobId) {
-        return send(
-                "GET",
-                JOBS_PATH + "/" + jobId + "/result",
-                null
-        );
+        return parseResponse(getApprovedResultRaw(jobId));
+    }
+
+    /** AI v1 delivery: only an already captured, hashed result can be acknowledged. */
+    public Map<String, Object> reportDelivery(
+            UUID jobId,
+            String deliveryStatus,
+            String resultHash,
+            String notes
+    ) {
+        if (jobId == null || !"blocked".equals(deliveryStatus)
+                && !"stored".equals(deliveryStatus)) {
+            throw new IllegalArgumentException("Invalid AI delivery identity or status");
+        }
+        if (resultHash == null || !resultHash.matches("[0-9a-f]{64}")) {
+            throw new IllegalArgumentException("AI delivery requires approved resultHash");
+        }
+        if (notes == null || notes.isBlank()) {
+            throw new IllegalArgumentException("AI delivery receipt/notes required");
+        }
+        String body;
+        try {
+            body = mapper.writeValueAsString(Map.of(
+                    "status", deliveryStatus,
+                    "resultHash", resultHash,
+                    "notes", notes
+            ));
+        } catch (Exception ex) {
+            throw new IllegalStateException("AI delivery JSON encoding failed", ex);
+        }
+        return send("POST", JOBS_PATH + "/" + jobId + "/delivery", body);
+    }
+
+    /** Keep the response exactly as received, rather than reserializing a Map. */
+    public String getApprovedResultRaw(UUID jobId) {
+        if (jobId == null) {
+            throw new IllegalArgumentException("AI job ID is required");
+        }
+        return sendRaw("GET", JOBS_PATH + "/" + jobId + "/result", null);
+    }
+
+    public Map<String, Object> parseResponse(String json) {
+        return parse(json);
     }
 
     private void validateEnvelope(String requestJson) {
@@ -185,6 +223,14 @@ public class AiRagJobClient {
             String path,
             String requestJson
     ) {
+        return parse(sendRaw(method, path, requestJson));
+    }
+
+    private String sendRaw(
+            String method,
+            String path,
+            String requestJson
+    ) {
         if (baseUrl.isBlank()) {
             throw new IllegalStateException(
                     "AI_RAG_BASE_URL is not configured"
@@ -248,7 +294,7 @@ public class AiRagJobClient {
                 );
             }
 
-            return parse(response.body());
+            return response.body();
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

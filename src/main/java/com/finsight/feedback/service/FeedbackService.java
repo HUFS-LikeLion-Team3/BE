@@ -1,3 +1,4 @@
+
 package com.finsight.feedback.service;
 
 import com.finsight.feedback.dto.FeedbackDetailResponse;
@@ -105,6 +106,7 @@ public class FeedbackService {
                     feedback,
                     null,
                     List.of(),
+                    List.of(),
                     List.of()
             );
         }
@@ -192,11 +194,12 @@ public class FeedbackService {
         Map<UUID, List<FeedbackDetailResponse.FeedbackItemResponse>>
                 itemsBySessionTargetId = new LinkedHashMap<>();
 
-        for (AiFeedbackItem item : items) {
-            if (item.getSessionTargetId() == null) {
-                continue;
-            }
+        List<FeedbackDetailResponse.FeedbackItemResponse> sessionItems =
+                new ArrayList<>();
 
+        String flowSummary = feedback.getFlowSummary();
+
+        for (AiFeedbackItem item : items) {
             FeedbackDetailResponse.FeedbackItemResponse itemResponse =
                     new FeedbackDetailResponse.FeedbackItemResponse(
                             item.getId(),
@@ -208,6 +211,17 @@ public class FeedbackService {
                             ),
                             item.getSortOrder()
                     );
+
+            if (item.getSessionTargetId() == null) {
+                sessionItems.add(itemResponse);
+
+                if (item.getItemType()
+                        == AiFeedbackItem.FeedbackItemType.flow_summary) {
+                    flowSummary = item.getContent();
+                }
+
+                continue;
+            }
 
             itemsBySessionTargetId
                     .computeIfAbsent(
@@ -230,7 +244,8 @@ public class FeedbackService {
 
         return FeedbackDetailResponse.from(
                 feedback,
-                feedback.getFlowSummary(),
+                flowSummary,
+                sessionItems,
                 targetFeedbacks,
                 referenceResponses
         );

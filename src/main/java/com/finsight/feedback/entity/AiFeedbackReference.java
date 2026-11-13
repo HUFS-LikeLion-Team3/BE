@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import lombok.Getter;
@@ -15,22 +16,17 @@ import java.util.UUID;
 @Entity
 @Table(
         name = "ai_feedback_references",
-        uniqueConstraints = {
-                @UniqueConstraint(
-                        name = "uk_ai_feedback_reference_chunk",
-                        columnNames = {
-                                "ai_feedback_id",
-                                "source_document_chunk_id"
-                        }
-                ),
-                @UniqueConstraint(
-                        name = "uk_ai_feedback_reference_order",
-                        columnNames = {
-                                "ai_feedback_id",
-                                "sort_order"
-                        }
-                )
-        }
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_ai_feedback_reference_order",
+                columnNames = {
+                        "ai_feedback_id",
+                        "sort_order"
+                }
+        ),
+        indexes = @Index(
+                name = "idx_ai_feedback_reference_feedback_chunk",
+                columnList = "ai_feedback_id,source_document_chunk_id"
+        )
 )
 @Getter
 @NoArgsConstructor

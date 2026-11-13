@@ -1,3 +1,4 @@
+
 package com.finsight.feedback.service;
 
 import com.finsight.feedback.entity.AiRagJob;
@@ -15,9 +16,7 @@ public class AiRagJobStore {
 
     private final AiRagJobRepository repository;
 
-    @Transactional(
-            propagation = Propagation.REQUIRES_NEW
-    )
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public AiRagJob ensure(
             UUID feedbackId,
             UUID sessionId,
@@ -26,9 +25,7 @@ public class AiRagJobStore {
             String packageId,
             String requestJson
     ) {
-        var existing = repository.findByIdForUpdate(
-                feedbackId
-        );
+        var existing = repository.findByIdForUpdate(feedbackId);
 
         if (existing.isPresent()) {
             AiRagJob job = existing.get();
@@ -37,9 +34,7 @@ public class AiRagJobStore {
                     || !job.getStage().equals(stage)
                     || !job.getBeRequestId().equals(requestId)
                     || !job.getPackageId().equals(packageId)) {
-                throw new IllegalStateException(
-                        "request_input_conflict"
-                );
+                throw new IllegalStateException("request_input_conflict");
             }
 
             if (requestJson != null) {
@@ -61,34 +56,47 @@ public class AiRagJobStore {
         );
     }
 
-    @Transactional(
-            propagation = Propagation.REQUIRES_NEW
-    )
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void accepted(
             UUID feedbackId,
             UUID jobId,
             String status
     ) {
-        repository.findByIdForUpdate(feedbackId)
-                .orElseThrow()
-                .accepted(jobId, status);
+        AiRagJob job = repository.findByIdForUpdate(feedbackId)
+                .orElseThrow();
+
+        if (job.getJobId() != null) {
+            if (!job.getJobId().equals(jobId)) {
+                throw new IllegalStateException("request_input_conflict");
+            }
+
+            // A late duplicate receipt must not reset stored/blocked work.
+            return;
+        }
+
+        if ("reconciliation_required".equals(job.getState())) {
+            throw new IllegalStateException(
+                    "ai_job_requires_reconciliation"
+            );
+        }
+
+        job.accepted(jobId, status);
     }
 
-    @Transactional(
-            propagation = Propagation.REQUIRES_NEW
-    )
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void uncertain(
             UUID feedbackId,
             String failureCode
     ) {
-        repository.findByIdForUpdate(feedbackId)
-                .orElseThrow()
-                .uncertain(failureCode);
+        AiRagJob job = repository.findByIdForUpdate(feedbackId)
+                .orElseThrow();
+
+        if (!"stored".equals(job.getState())) {
+            job.uncertain(failureCode);
+        }
     }
 
-    @Transactional(
-            propagation = Propagation.REQUIRES_NEW
-    )
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void updateStatus(
             UUID feedbackId,
             String status,
@@ -97,5 +105,47 @@ public class AiRagJobStore {
         repository.findByIdForUpdate(feedbackId)
                 .orElseThrow()
                 .updateStatus(status, ragSnapshotHash);
+    }
+
+    // #26: Preserve the original approved result in its own transaction.
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void captureApprovedResult(
+            UUID feedbackId,
+            UUID aiJobId,
+            String originalJson,
+            String resultHash
+    ) {
+        repository.findByIdForUpdate(feedbackId)
+                .orElseThrow(() ->
+                        new IllegalStateException("ai_rag_job_missing")
+                )
+                .captureApprovedResult(
+                        aiJobId,
+                        originalJson,
+                        resultHash
+                );
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void blocked(
+            UUID feedbackId,
+            String reason
+    ) {
+        AiRagJob job = repository.findByIdForUpdate(feedbackId)
+                .orElseThrow();
+
+        job.markDeliveryBlocked(reason);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void stored(
+            UUID feedbackId,
+            UUID aiJobId,
+            String resultHash
+    ) {
+        AiRagJob job = repository.findByIdForUpdate(feedbackId)
+                .orElseThrow();
+
+        job.markDeliveryStored(aiJobId, resultHash);
     }
 }

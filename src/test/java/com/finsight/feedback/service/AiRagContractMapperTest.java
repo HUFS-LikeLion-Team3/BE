@@ -294,6 +294,70 @@ class AiRagContractMapperTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void finalUnavailableObservationClearsOnlyOutputUnitAndKeepsSnapshot()
+            throws Exception {
+        FeedbackGenerationInput base = frozen(true);
+        Map<String, Object> observation = map(
+                "horizon", 1,
+                "status", "unavailable",
+                "unit", "%",
+                "observedAt", null,
+                "observedValue", null,
+                "changeValue", null,
+                "changePercent", null,
+                "observationDelaySessions", 0,
+                "unavailableReason", "LOCAL_TEST_UNAVAILABLE",
+                "usableForAiEvidence", false
+        );
+        Map<String, Object> marketResults = map(
+                "targets", List.of(map(
+                        "sessionTargetId", targetId.toString(),
+                        "observations", List.of(observation)
+                ))
+        );
+        FeedbackGenerationInput finalInput = new FeedbackGenerationInput(
+                base.inputCutoffAt(),
+                base.requestSnapshot(),
+                base.predictionSnapshot(),
+                base.marketBaselineSnapshot(),
+                marketResults,
+                base.reflectionSnapshot(),
+                base.inputHash(),
+                base.allowedTargetIds(),
+                base.evidenceChunks()
+        );
+
+        Map<String, Object> envelope = read(
+                mapper.envelope(
+                        feedback(AiFeedback.FeedbackStage.FINAL),
+                        finalInput,
+                        "sha256:" + "a".repeat(64),
+                        UUID.randomUUID()
+                )
+        );
+        Map<String, Object> input =
+                (Map<String, Object>) envelope.get("input");
+        List<Map<String, Object>> rows =
+                (List<Map<String, Object>>) input.get("results");
+        Map<String, Object> result = rows.get(0);
+
+        assertEquals("unavailable", result.get("status"));
+        assertTrue(result.containsKey("unit"));
+        assertNull(result.get("unit"));
+        assertNull(result.get("observedAt"));
+        assertNull(result.get("observedValue"));
+        assertNull(result.get("change"));
+        assertNull(result.get("changePercent"));
+        assertEquals(0, result.get("observationDelaySessions"));
+        assertEquals("LOCAL_TEST_UNAVAILABLE", result.get("unavailableReason"));
+        assertEquals(false, result.get("usableForAiEvidence"));
+
+        // Keep the original evidence snapshot immutable.
+        assertEquals("%", observation.get("unit"));
+    }
+
+    @Test
     void finalPayloadRetainsFrozenOriginalAndMapsActualObservation()
             throws Exception {
 

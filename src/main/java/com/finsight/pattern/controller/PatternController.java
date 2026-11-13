@@ -42,12 +42,18 @@ public class PatternController {
     }
 
     @GetMapping("/reasons")
-    public PatternResponses.ReasonsResponse reasons() {
-        return patternService.reasons(currentUser.id());
+    public PatternResponses.ReasonsResponse reasons(
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) Integer limit) {
+        return patternService.reasons(currentUser.id(), from, to, limit);
     }
 
     @GetMapping("/suggestions")
-    public PatternResponses.SuggestionsResponse suggestions() {
-        return patternService.suggestions(currentUser.id());
+    public PatternResponses.SuggestionsResponse suggestions(
+            @RequestParam(required = false) Integer limit) {
+        return patternService.suggestions(currentUser.id(), limit);
     }
 }

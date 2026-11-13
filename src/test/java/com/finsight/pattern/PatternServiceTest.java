@@ -3,6 +3,8 @@ package com.finsight.pattern;
 import com.finsight.global.exception.ApiException;
 import com.finsight.pattern.dto.PatternPredictionRow;
 import com.finsight.pattern.repository.PatternPredictionRepository;
+import com.finsight.pattern.repository.PatternReflectionRepository;
+import com.finsight.reflection.entity.ReflectionNote;
 import com.finsight.pattern.service.PatternService;
 import com.finsight.prediction.entity.Prediction;
 import org.junit.jupiter.api.Test;
@@ -23,13 +25,14 @@ import static org.mockito.Mockito.*;
 class PatternServiceTest {
 
     @Mock PatternPredictionRepository rows;
+    @Mock PatternReflectionRepository reflections;
 
     private final UUID userId = UUID.randomUUID();
     private final UUID sessionA = UUID.randomUUID();
     private final UUID sessionB = UUID.randomUUID();
 
     private PatternService service() {
-        return new PatternService(rows);
+        return new PatternService(rows, reflections);
     }
 
     private PatternPredictionRow row(UUID session, String newsCategory,
@@ -135,56 +138,68 @@ class PatternServiceTest {
     }
 
     @Test
-    void reasonsCountBlankAsMissingAndEachTermOncePerPrediction() {
-        when(rows.findSubmittedPredictionsForUser(userId)).thenReturn(List.of(
-                row(sessionA, "rate", 1, Prediction.Direction.up, "환율 환율 상승"),
-                row(sessionA, "rate", 5, Prediction.Direction.down, "환율 하락"),
-                row(sessionA, "rate", 20, Prediction.Direction.neutral, "  "),
-                row(sessionB, "semiconductor", 1, Prediction.Direction.up, null)
+    void reasonsCountActualReasonAndFinalMissedVariableRecordsWithoutInventingVariables() {
+        when(rows.findSubmittedPredictionsForUser(userId, null, null)).thenReturn(List.of(
+                row(sessionA, "rate", 1, Prediction.Direction.up, "환율 상승"),
+                row(sessionA, "rate", 5, Prediction.Direction.down, "  "),
+                row(sessionB, "rate", 20, Prediction.Direction.neutral, null)
         ));
-        var result = service().reasons(userId);
-        assertEquals(4, result.analyzedPredictions());
-        assertEquals(2, result.withReason());
-        assertEquals(2, result.withoutReason());
-        assertEquals(50.0, result.coveragePercent());
-        assertEquals("환율", result.frequentTerms().getFirst().term());
-        assertEquals(2, result.frequentTerms().getFirst().predictionCount());
+        ReflectionNote note = mock(ReflectionNote.class);
+        when(note.getBody()).thenReturn("환율 변화를 놓쳤다");
+        when(reflections.findFinalMissedVariableNotes(
+                userId, ReflectionNote.PromptKey.missed_variable, null, null))
+                .thenReturn(List.of(note));
+
+        var result = service().reasons(userId, null, null, 10);
+        assertEquals(1, result.analyzedPredictionCount());
+        assertEquals(1, result.analyzedReflectionCount());
+        assertTrue(result.consideredVariables().isEmpty());
+        assertTrue(result.missedVariables().isEmpty());
     }
 
     @Test
-    void suggestionsWithNoSubmittedHistoryReturnStartLearning() {
-        when(rows.findSubmittedPredictionsForUser(userId)).thenReturn(List.of());
-        var result = service().suggestions(userId);
-        assertEquals(0, result.analyzedPredictions());
-        assertEquals(1, result.suggestions().size());
-        assertEquals("START_LEARNING", result.suggestions().getFirst().code());
+    void reasonsUseOwnDateBoundariesForPredictionAndFinalReflectionLookups() {
+        var from = LocalDate.of(2026, 11, 1);
+        var to = LocalDate.of(2026, 11, 13);
+        var zone = ZoneId.of("Asia/Seoul");
+        OffsetDateTime fromInclusive = from.atStartOfDay(zone).toOffsetDateTime();
+        OffsetDateTime toExclusive = to.plusDays(1).atStartOfDay(zone).toOffsetDateTime();
+        when(rows.findSubmittedPredictionsForUser(userId, fromInclusive, toExclusive))
+                .thenReturn(List.of());
+        when(reflections.findFinalMissedVariableNotes(
+                userId, ReflectionNote.PromptKey.missed_variable, fromInclusive, toExclusive))
+                .thenReturn(List.of());
+
+        var result = service().reasons(userId, from, to, 1);
+        assertEquals(0, result.analyzedPredictionCount());
+        assertEquals(0, result.analyzedReflectionCount());
+        verify(rows).findSubmittedPredictionsForUser(userId, fromInclusive, toExclusive);
+        verify(reflections).findFinalMissedVariableNotes(
+                userId, ReflectionNote.PromptKey.missed_variable, fromInclusive, toExclusive);
     }
 
     @Test
-    void suggestionsDoNotCompareNewsCategoriesWithMarketCategories() {
-        when(rows.findSubmittedPredictionsForUser(userId)).thenReturn(List.of(
-                row(sessionA, "rate", 1, Prediction.Direction.up, "금리"),
-                row(sessionA, "rate", 5, Prediction.Direction.up, "금리"),
-                row(sessionA, "rate", 20, Prediction.Direction.down, "금리")
-        ));
-        var result = service().suggestions(userId);
+    void reasonsRejectInvalidDateAndLimitBeforeReadingRecords() {
+        var late = LocalDate.of(2026, 12, 31);
+        var early = LocalDate.of(2026, 1, 1);
+        assertThrows(ApiException.class, () -> service().reasons(userId, late, early, 10));
+        assertThrows(ApiException.class, () -> service().reasons(userId, null, null, 0));
+        assertThrows(ApiException.class, () -> service().reasons(userId, null, null, -1));
+        verifyNoInteractions(rows, reflections);
+    }
+
+    @Test
+    void suggestionsUseSpecifiedContractWithoutFabricatingPersonalizedEvidence() {
+        var result = service().suggestions(userId, 5);
+        assertTrue(result.insufficientData());
         assertTrue(result.suggestions().isEmpty());
+        verifyNoInteractions(rows, reflections);
     }
 
     @Test
-    void provisionalSuggestionsUseOnlyObservedNewsCategoriesAndMissingReasons() {
-        when(rows.findSubmittedPredictionsForUser(userId)).thenReturn(List.of(
-                row(sessionA, "rate", 1, Prediction.Direction.up, null),
-                row(sessionA, "rate", 5, Prediction.Direction.down, "금리"),
-                row(sessionA, "rate", 20, Prediction.Direction.down, null),
-                row(sessionA, "rate", 20, Prediction.Direction.up, null),
-                row(sessionB, "semiconductor", 1, Prediction.Direction.up, "실적")
-        ));
-        var result = service().suggestions(userId);
-        assertEquals(2, result.suggestions().size());
-        assertEquals("EXPLORE_CATEGORY", result.suggestions().get(0).code());
-        assertEquals("semiconductor", result.suggestions().get(0).category());
-        assertEquals("ADD_REASON", result.suggestions().get(1).code());
-        assertEquals(20, result.suggestions().get(1).horizon());
+    void suggestionsRejectInvalidLimit() {
+        assertThrows(ApiException.class, () -> service().suggestions(userId, 0));
+        assertThrows(ApiException.class, () -> service().suggestions(userId, -2));
+        verifyNoInteractions(rows, reflections);
     }
 }

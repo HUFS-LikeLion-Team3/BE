@@ -2,7 +2,7 @@ package com.finsight.pattern.dto;
 
 import java.util.List;
 
-/** P1 개인 패턴 응답 DTO. categories/horizons는 P1 PDF 23~27페이지 기준. */
+/** P1 개인 패턴 API 응답 구조. */
 public final class PatternResponses {
     private PatternResponses() {
     }
@@ -40,37 +40,38 @@ public final class PatternResponses {
     ) {
     }
 
-    // 아래 두 API는 새 P1 PDF에 상세 응답 규격이 없어 기존 구현 계약을 유지한다.
-    public record ReasonCoverage(
-            int horizon,
-            long totalPredictions,
-            long withReason,
-            long withoutReason,
-            double coveragePercent
+    /** 변수 추출 규칙이 합의되면 예측/회고에서 확인된 변수만 채운다. */
+    public record VariablePattern(
+            String variable,
+            String variableName,
+            long mentionCount,
+            List<String> exampleTexts
     ) {
-    }
-
-    public record FrequentTerm(String term, long predictionCount) {
     }
 
     public record ReasonsResponse(
-            long analyzedPredictions,
-            long withReason,
-            long withoutReason,
-            double coveragePercent,
-            List<ReasonCoverage> byHorizon,
-            List<FrequentTerm> frequentTerms
+            long analyzedPredictionCount,
+            long analyzedReflectionCount,
+            List<VariablePattern> consideredVariables,
+            List<VariablePattern> missedVariables
     ) {
+    }
+
+    public record SuggestionEvidence(String type, long count) {
     }
 
     public record Suggestion(
-            String code,
-            String category,
-            Integer horizon,
-            String message
+            String suggestionId,
+            String title,
+            String description,
+            String reason,
+            SuggestionEvidence evidence
     ) {
     }
 
-    public record SuggestionsResponse(long analyzedPredictions, List<Suggestion> suggestions) {
+    public record SuggestionsResponse(
+            boolean insufficientData,
+            List<Suggestion> suggestions
+    ) {
     }
 }

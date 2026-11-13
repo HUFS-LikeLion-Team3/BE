@@ -1,7 +1,7 @@
 # P1 개인 패턴 API — 명세 대비 구현 상태
 
-> 기준: 새 `api 명세 - p1.pdf`(27쪽)의 **12. 개인 패턴**, 22~27쪽. 이 문서는 기존 임시 제안서를 대체한다.
-> `/reasons`, `/suggestions`는 이 PDF에 상세 계약이 없으므로 별도 합의 전까지 **임시 구현**이다.
+> 기준: 새 `api 명세 - p1.pdf`(33쪽)의 **12. 개인 패턴**, 22~33쪽. 이 문서는 기존 임시 제안서를 대체한다.
+> `/reasons`, `/suggestions`의 상세 계약은 28~33쪽에 추가되었다. 변수 추출·정규화 및 추천 충분성/생성 정책은 문서 자체에서 아직 미확정으로 표시되어 있다.
 
 ## 공통 데이터·조회 기준
 
@@ -61,30 +61,53 @@
 - 날짜 형식 오류, 역전 또는 빈/255자 초과 분야는 400.
 - P1 문서의 `observationCounts`는 **"관측 데이터가 있는 경우 표시할 수 있다"**는 선택적 기술이어서 현 패치에 추가하지 않았다. FE에서 필수인지 확인 후 `market_observations` 데이터와 연계해야 한다. `pending`을 `unavailable`로 세지 않는다.
 
-## GET /api/v1/users/me/patterns/reasons — 임시 구현
+## GET /api/v1/users/me/patterns/reasons — 명세 계약 적용, 변수 추출 정책 보류
 
-- P1 PDF에는 상세 요청/응답·분석 규칙이 없다.
-- 기존 API의 근거 작성률·기간별 작성률·단어 빈도(`frequentTerms`)를 그대로 유지한다.
-- 빈 문자열을 근거 미작성으로 처리하며 한 예측에서 중복되는 단어는 한 번만 센다.
-- 형태소 분석이나 AI 기반 '경제 변수 분석'으로 오인하면 안 된다. 팀 검토 필요.
+- Query: `from` (LocalDate, 선택), `to` (LocalDate, 선택), `limit` (Integer, 선택; 문서 제안 기본값 10).
+- `from > to`, `limit <= 0`, 잘못된 날짜·숫자 형식이면 400.
+- 기존 `PatternPredictionRepository`로 **로그인 사용자의 제출된 예측 근거**를 조회한다.
+- 추가 `PatternReflectionRepository`로 **로그인 사용자의 최종 회고(`reflection_type=final`, `prompt_key=missed_variable`)**만 조회한다. 원본을 수정하지 않는다.
+- `analyzedPredictionCount`: 텍스트가 있는 제출 예측 근거 수. `analyzedReflectionCount`: 텍스트가 있는 해당 최종 회고 응답 수.
+- 기간 기준은 기존 프로젝트의 `Asia/Seoul` 기준이며 예측은 **세션 제출일**, 최종 회고는 **회고 작성일**이다. P1 명세에 날짜 기준이 상세히 구분되어 있지 않아 FE/BE 확인이 필요하다.
+- P1 명세 28~30쪽은 `consideredVariables`/`missedVariables`의 `variable`, `variableName`, `mentionCount`, `exampleTexts` 구조를 명시하지만 **용어 추출·동의어 정규화 규칙은 별도 확정**을 요구한다. 기존 팀 소스에는 해당 규칙이 없으므로 현재 반환 목록은 **빈 배열**이며, 텍스트를 무작위로 변수라고 가정하거나 AI 결과를 생성하지 않는다. 이 부분은 구현 완료가 아니다.
 
-## GET /api/v1/users/me/patterns/suggestions — 임시 구현
+예시 응답 형태(변수 추출 규칙 확정 전):
 
-- P1 PDF에는 추천 기준·응답 계약이 없다.
-- 기존 코드의 `news.category` 건수와 `market_targets.market_category`를 직접 비교한 **서로 다른 분류 체계 혼용 오류**를 수정했다.
-- 현재 임시 동작: 기록이 없으면 `START_LEARNING`; 기록이 있으면 **이미 제출한 뉴스 분야 사이에서** 건수가 실제로 적은 분야가 있을 때만 `EXPLORE_CATEGORY`; 이유 없는 예측 기록이 있으면 `ADD_REASON`.
-- 예측 기록이 한 분야뿐이거나 분야별 예측 수가 동률이면 부족한 분야를 임의로 추천하지 않는다.
-- 이 규칙은 P1 PDF가 확정한 정책이 아니라 **추가 협의가 필요**하다. 투자/시장 성과 추천과 무관하다.
-
-## 수정 범위 및 검증
-
-- `pattern` 패키지의 Controller, Service, Repository, DTO, Test에 국한.
-- 기존 Auth/News/Prediction/Outcome 구현, DB 컬럼, 마이그레이션 변경 없음.
-- 아래 검증은 **패치를 적용한 로컬 프로젝트에서** 실행해야 한다.
-
-```bash
-./gradlew test --tests 'com.finsight.pattern.*'
-./gradlew test
+```json
+{
+  "analyzedPredictionCount": 6,
+  "analyzedReflectionCount": 2,
+  "consideredVariables": [],
+  "missedVariables": []
+}
 ```
 
-- 이후 로그인 토큰으로 `categories`, `horizons`의 기본·기간·분야·빈 결과·400/401 응답을 실제 호출해 확인할 것.
+## GET /api/v1/users/me/patterns/suggestions — 명세 계약 적용, 추천 정책 보류
+
+- Query: `limit` (Integer, 선택; 문서 제안 기본값 5). `limit <= 0`과 잘못된 숫자 형식은 400.
+- DTO는 `insufficientData`, `suggestions[].suggestionId/title/description/reason/evidence.type/evidence.count` 형식.
+- 이전 구현의 `START_LEARNING`, `EXPLORE_CATEGORY`, `ADD_REASON` 같은 **명세 외 규칙과 필드**는 제거했다.
+- P1 명세 31~33쪽에서 **충분한 데이터 기준과 추천 생성 방식은 미확정**이라고 명시한다. 따라서 현재 **개인화 추천을 만들어 반환하지 않으며**, 정책 미확정 동안 `insufficientData=true`, `suggestions=[]`를 반환한다. 이 값은 실제 데이터가 부족하다는 확정 판정이 아니라, 검증된 정책이 없어 추천을 만들 수 없다는 임시 보수적 처리다.
+- 정책 확정 전에는 추천 결과를 구현 완료로 표시하거나 PR에서 그렇게 주장하지 말 것.
+
+```json
+{
+  "insufficientData": true,
+  "suggestions": []
+}
+```
+
+## 팀에 확인할 사항
+
+1. **변수 추출 정책**: 어떤 용어 사전/정규화 코드/동의어·복합어 규칙을 사용할지. 기존 팀 소스에는 확정된 정책이 없음.
+2. **제안 충분성·생성 규칙**: 추천을 생성할 최소 기록 수, 적용 가능한 근거 유형, 생성 순서 및 `evidence.count` 계산 기준.
+3. **날짜 기준**: `reasons`의 `from/to`를 예측 제출일과 회고 작성일 각각에 적용할지, 하나의 세션 기준일로 통일할지.
+4. `observationCounts`와 미정의 뉴스 분야명 처리 방식은 이전 검토 사항 그대로 남아 있음.
+
+## 수정·검증 범위
+
+- `pattern` 내부 Controller/Service/DTO/Test를 수정하고, 최종 회고를 조회하는 `PatternReflectionRepository` 하나만 추가한다.
+- P0 인증, 예측, 회고 저장 로직과 DB 스키마는 변경하지 않는다.
+- 새 PDF의 규칙에 근거가 없는 자연어 분석 및 투자 추천은 추가하지 않는다.
+- 로컬 테스트: `./gradlew test --tests 'com.finsight.pattern.*'` 및 `./gradlew test`.
+- 통합 테스트: `reasons?from=2026-01-01&to=2026-12-31&limit=10`, `suggestions?limit=5`, `limit=0`(400), 인증 누락(401).

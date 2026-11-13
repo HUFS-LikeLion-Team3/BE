@@ -2,28 +2,24 @@ package com.finsight.pattern.service;
 
 import com.finsight.pattern.dto.PatternPredictionRow;
 import com.finsight.pattern.repository.PatternPredictionRepository;
+import com.finsight.pattern.repository.PatternReflectionRepository;
+import com.finsight.reflection.entity.ReflectionNote;
 import com.finsight.prediction.entity.Prediction;
 import com.finsight.global.exception.ApiException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
-import java.util.Comparator;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
-import java.time.LocalDate;
-import java.time.OffsetDateTime;
-import java.time.ZoneId;
 
 import static com.finsight.pattern.dto.PatternResponses.*;
 
@@ -45,21 +41,16 @@ public class PatternService {
             "employment", "고용",
             "economy", "경제"
     );
-    private static final int TERM_LIMIT = 10;
-    private static final Pattern TOKEN = Pattern.compile("[\\p{L}\\p{N}]{2,}");
-    // Minimal stop words; token frequency is lexical, NOT semantic concept extraction.
-    private static final Set<String> STOP_WORDS = Set.of(
-            "있다", "없다", "같다", "생각", "판단", "때문", "것으로", "것이다",
-            "것을", "이후", "그리고", "하지만", "또한", "합니다", "했습니다", "있습니다",
-            "예상합니다", "예측합니다", "예상됩니다", "가능성", "가능성이",
-            "단기", "단기적으로", "중기", "중기적으로", "장기", "장기적으로",
-            "there", "about", "with", "from", "would", "that", "this", "have", "will"
-    );
+    private static final int DEFAULT_REASON_LIMIT = 10;
+    private static final int DEFAULT_SUGGESTION_LIMIT = 5;
 
     private final PatternPredictionRepository patternPredictionRepository;
+    private final PatternReflectionRepository patternReflectionRepository;
 
-    public PatternService(PatternPredictionRepository patternPredictionRepository) {
+    public PatternService(PatternPredictionRepository patternPredictionRepository,
+                          PatternReflectionRepository patternReflectionRepository) {
         this.patternPredictionRepository = patternPredictionRepository;
+        this.patternReflectionRepository = patternReflectionRepository;
     }
 
     public CategoriesResponse categories(UUID userId) {
@@ -157,102 +148,68 @@ public class PatternService {
     }
 
     public ReasonsResponse reasons(UUID userId) {
-        List<PatternPredictionRow> rows = rowsFor(userId);
-        Map<Integer, Long> totals = new HashMap<>();
-        Map<Integer, Long> explained = new HashMap<>();
-        Map<String, Long> termCounts = new HashMap<>();
-        long withReason = 0;
-        for (PatternPredictionRow row : rows) {
-            int horizon = row.horizon().intValue();
-            totals.merge(horizon, 1L, Long::sum);
-            if (!hasReason(row.reason())) continue;
-            withReason++;
-            explained.merge(horizon, 1L, Long::sum);
-            // One term counts once per prediction, no matter how often it occurs in the reason.
-            for (String term : distinctTerms(row.reason())) {
-                termCounts.merge(term, 1L, Long::sum);
-            }
-        }
-        List<ReasonCoverage> byHorizon = HORIZONS.stream().map(h -> {
-            long total = totals.getOrDefault(h, 0L);
-            long provided = explained.getOrDefault(h, 0L);
-            return new ReasonCoverage(h, total, provided, total - provided, percent(provided, total));
-        }).toList();
-        List<FrequentTerm> frequentTerms = termCounts.entrySet().stream()
-                .sorted(Comparator.<Map.Entry<String, Long>>comparingLong(Map.Entry::getValue)
-                        .reversed().thenComparing(Map.Entry::getKey))
-                .limit(TERM_LIMIT)
-                .map(e -> new FrequentTerm(e.getKey(), e.getValue()))
-                .toList();
-        return new ReasonsResponse(rows.size(), withReason, rows.size() - withReason,
-                percent(withReason, rows.size()), byHorizon, frequentTerms);
+        return reasons(userId, null, null, null);
+    }
+
+    public ReasonsResponse reasons(UUID userId, LocalDate from, LocalDate to, Integer limit) {
+        validateDateRange(from, to);
+        validateLimit(limit == null ? DEFAULT_REASON_LIMIT : limit);
+
+        // 기존 예측 조회는 세션 제출일을 기준으로 기간을 적용한다.
+        // 최종 회고는 실제 회고 작성일(createdAt) 기준으로 별도 조회한다.
+        OffsetDateTime fromInclusive = dayStart(from);
+        OffsetDateTime toExclusive = nextDayStart(to);
+        List<PatternPredictionRow> rows = patternPredictionRepository
+                .findSubmittedPredictionsForUser(userId, fromInclusive, toExclusive);
+        List<ReflectionNote> missedNotes = patternReflectionRepository.findFinalMissedVariableNotes(
+                userId, ReflectionNote.PromptKey.missed_variable, fromInclusive, toExclusive);
+
+        long predictionCount = rows.stream()
+                .filter(row -> hasText(row.reason()))
+                .count();
+        long reflectionCount = missedNotes.stream()
+                .filter(note -> hasText(note.getBody()))
+                .count();
+
+        // P1 명세는 변수 추출/동의어 정규화 규칙을 별도로 확정하도록 명시한다.
+        // 확정 전에는 단어를 경제 변수인 것처럼 추측하거나 가짜 변수 코드를 생성하지 않는다.
+        return new ReasonsResponse(predictionCount, reflectionCount, List.of(), List.of());
     }
 
     public SuggestionsResponse suggestions(UUID userId) {
-        List<PatternPredictionRow> rows = rowsFor(userId);
-        if (rows.isEmpty()) {
-            return new SuggestionsResponse(0, List.of(new Suggestion(
-                    "START_LEARNING", null, null,
-                    "제출된 예측 기록이 없습니다. 학습 세션에서 예측을 제출한 뒤 패턴을 확인해 보세요.")));
+        return suggestions(userId, null);
+    }
+
+    public SuggestionsResponse suggestions(UUID userId, Integer limit) {
+        validateLimit(limit == null ? DEFAULT_SUGGESTION_LIMIT : limit);
+
+        // 데이터 충분성 기준과 추천 생성 규칙은 P1 명세에서 미확정이다.
+        // 규칙이 확정되기 전에는 개인화 추천과 근거를 지어내지 않는다.
+        return new SuggestionsResponse(true, List.of());
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private static void validateDateRange(LocalDate from, LocalDate to) {
+        if (from != null && to != null && from.isAfter(to)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "조회 조건이 올바르지 않습니다.");
         }
+    }
 
-        List<Suggestion> suggestions = new ArrayList<>();
-        // 임시 제안 규칙: 'news.category' 간 제출 건수가 다를 때만 덜 학습한 뉴스 분야를 안내한다.
-        // P1 PDF에는 suggestions 상세 정책이 없어 FE/BE 확정이 필요하다.
-        Map<String, Long> categoryCount = rows.stream()
-                .collect(Collectors.groupingBy(PatternPredictionRow::newsCategory, Collectors.counting()));
-        long maxCategoryCount = categoryCount.values().stream()
-                .mapToLong(Long::longValue)
-                .max().orElse(0L);
-        categoryCount.entrySet().stream()
-                .filter(entry -> entry.getValue() < maxCategoryCount)
-                .min(Comparator.<Map.Entry<String, Long>>comparingLong(Map.Entry::getValue)
-                        .thenComparing(Map.Entry::getKey))
-                .ifPresent(entry -> suggestions.add(new Suggestion(
-                        "EXPLORE_CATEGORY", entry.getKey(), null,
-                        entry.getKey() + " 분야의 제출 예측 기록이 상대적으로 적습니다. 다음 학습에서 이 분야를 살펴보세요.")));
-
-        Map<Integer, Long> totals = new HashMap<>();
-        Map<Integer, Long> missing = new HashMap<>();
-        for (PatternPredictionRow row : rows) {
-            int horizon = row.horizon().intValue();
-            totals.merge(horizon, 1L, Long::sum);
-            if (!hasReason(row.reason())) missing.merge(horizon, 1L, Long::sum);
+    private static void validateLimit(int limit) {
+        if (limit <= 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "조회 조건이 올바르지 않습니다.");
         }
-        HORIZONS.stream()
-                .filter(h -> totals.getOrDefault(h, 0L) > 0 && missing.getOrDefault(h, 0L) > 0)
-                .max(Comparator.<Integer>comparingLong(h -> missing.getOrDefault(h, 0L))
-                        .thenComparing(Comparator.reverseOrder()))
-                .ifPresent(h -> suggestions.add(new Suggestion(
-                        "ADD_REASON", null, h,
-                        "T" + h + " 예측에서 판단 이유가 비어 있는 기록이 "
-                                + missing.get(h) + "건 있습니다. 다음에는 이유도 함께 남겨 보세요.")));
-
-        return new SuggestionsResponse(rows.size(), List.copyOf(suggestions));
     }
 
-    private List<PatternPredictionRow> rowsFor(UUID userId) {
-        return patternPredictionRepository.findSubmittedPredictionsForUser(userId);
+    private static OffsetDateTime dayStart(LocalDate date) {
+        return date == null ? null : date.atStartOfDay(KOREA_ZONE).toOffsetDateTime();
     }
 
-    private static boolean hasReason(String reason) {
-        return reason != null && !reason.isBlank();
-    }
-
-    private static Set<String> distinctTerms(String reason) {
-        Set<String> terms = new HashSet<>();
-        Matcher matcher = TOKEN.matcher(reason);
-        while (matcher.find()) {
-            String word = matcher.group().toLowerCase(Locale.ROOT);
-            if (!STOP_WORDS.contains(word) && !word.chars().allMatch(Character::isDigit)) {
-                terms.add(word);
-            }
-        }
-        return terms;
-    }
-
-    private static double percent(long numerator, long denominator) {
-        return denominator == 0 ? 0.0 : Math.round(1000.0 * numerator / denominator) / 10.0;
+    private static OffsetDateTime nextDayStart(LocalDate date) {
+        return date == null ? null : date.plusDays(1).atStartOfDay(KOREA_ZONE).toOffsetDateTime();
     }
 
     private static final class DirectionCounter {

@@ -45,7 +45,7 @@ public class FeedbackFrozenDispatchEventListener {
         // generateInitial() must reuse that saved job.
         generationService.generateInitial(
                 event.learningSessionId(),
-                event.submittedAt()
+                event.evidenceCutoffAt()
         );
     }
 

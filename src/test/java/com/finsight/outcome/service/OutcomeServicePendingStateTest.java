@@ -77,6 +77,39 @@ class OutcomeServicePendingStateTest {
     }
 
     @Test
+    void replayBlocksAllOutcomeReadsUntilResultsAreRevealed() {
+        var session = LearningSession.create(userId, UUID.randomUUID(), LearningSession.SessionType.replay);
+        var target = SessionTarget.create(sessionId, marketTargetId, 1);
+        when(learningSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(sessionTargetRepository.findById(sessionTargetId)).thenReturn(Optional.of(target));
+
+        assertReplayOutcomeForbidden();
+        var submittedAt = OffsetDateTime.parse("2026-11-13T10:00:00+09:00");
+        session.markSubmitted(submittedAt, submittedAt.minusMonths(5));
+        assertReplayOutcomeForbidden();
+
+        verifyNoInteractions(baselineRepository, observationRepository, seriesPointRepository, eventRepository);
+        session.advanceMarketStatus(LearningSession.LearningStatus.reflection_pending);
+        when(sessionTargetRepository.findAllByLearningSessionId(sessionId)).thenReturn(List.of());
+        assertEquals(sessionId, service.findAll(userId, sessionId).learningSessionId());
+    }
+
+    private void assertReplayOutcomeForbidden() {
+        assertAll(
+                () -> assertForbidden(() -> service.findAll(userId, sessionId)),
+                () -> assertForbidden(() -> service.findOne(userId, sessionId, sessionTargetId)),
+                () -> assertForbidden(() -> service.findSeries(userId, sessionId, sessionTargetId)),
+                () -> assertForbidden(() -> service.findEvents(userId, sessionTargetId))
+        );
+    }
+
+    private void assertForbidden(org.junit.jupiter.api.function.Executable read) {
+        var error = assertThrows(ApiException.class, read);
+        assertEquals(403, error.getStatus().value());
+        assertEquals("예측 제출 또는 결과 공개가 완료되지 않아 시장 결과를 조회할 수 없습니다.", error.getMessage());
+    }
+
+    @Test
     void findAllReturnsPendingWhenBaselineIsNotInitialized() {
         prepareSubmittedSessionWithoutBaseline();
 

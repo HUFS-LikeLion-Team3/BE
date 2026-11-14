@@ -1,6 +1,7 @@
 package com.finsight.pattern.repository;
 
 import com.finsight.reflection.entity.ReflectionNote;
+import com.finsight.pattern.dto.PatternReflectionRow;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
@@ -13,7 +14,8 @@ import java.util.UUID;
 public interface PatternReflectionRepository extends Repository<ReflectionNote, UUID> {
 
     @Query("""
-            select r from ReflectionNote r, LearningSession s
+            select new com.finsight.pattern.dto.PatternReflectionRow(s.newsId, r.body)
+            from ReflectionNote r, LearningSession s
             where r.learningSessionId = s.id
               and s.userId = :userId
               and s.submittedAt is not null
@@ -24,7 +26,7 @@ public interface PatternReflectionRepository extends Repository<ReflectionNote, 
               and (:toExclusive is null or r.createdAt < :toExclusive)
             order by r.createdAt desc, r.id asc
             """)
-    List<ReflectionNote> findFinalMissedVariableNotes(
+    List<PatternReflectionRow> findFinalMissedVariableNotes(
             @Param("userId") UUID userId,
             @Param("promptKey") ReflectionNote.PromptKey promptKey,
             @Param("fromInclusive") OffsetDateTime fromInclusive,

@@ -15,7 +15,7 @@ public interface PatternPredictionRepository extends Repository<Prediction, UUID
 
     @Query("""
             select new com.finsight.pattern.dto.PatternPredictionRow(
-                s.id, n.category, p.horizon, p.direction, p.reason)
+                s.id, s.newsId, n.category, p.horizon, p.direction, p.reason)
             from LearningSession s, SessionTarget st, Prediction p, News n
             where s.userId = :userId
               and s.submittedAt is not null

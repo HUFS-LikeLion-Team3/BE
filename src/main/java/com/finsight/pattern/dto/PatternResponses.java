@@ -40,7 +40,7 @@ public final class PatternResponses {
     ) {
     }
 
-    /** 변수 추출 규칙이 합의되면 예측/회고에서 확인된 변수만 채운다. */
+    /** 예측 근거/회고 원문에서 사전으로 추출한 변수별 뉴스 단위 집계. */
     public record VariablePattern(
             String variable,
             String variableName,
@@ -57,7 +57,7 @@ public final class PatternResponses {
     ) {
     }
 
-    public record SuggestionEvidence(String type, long count) {
+    public record SuggestionEvidence(String type, long count, List<String> exampleTexts) {
     }
 
     public record Suggestion(

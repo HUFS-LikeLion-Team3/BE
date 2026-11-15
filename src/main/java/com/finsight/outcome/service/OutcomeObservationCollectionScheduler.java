@@ -158,7 +158,7 @@ public class OutcomeObservationCollectionScheduler {
 
         for (SessionTarget selected : selectedTargets) {
             try {
-                collectTarget(session, selected);
+                collectTarget(sessionId, selected);
             } catch (MarketDataProvider.DataException exception) {
                 log.debug(
                         "Market data unavailable during observation collection: targetId={}, status={}",
@@ -176,10 +176,9 @@ public class OutcomeObservationCollectionScheduler {
     }
 
     private void collectTarget(
-            LearningSession session,
+            UUID sessionId,
             SessionTarget selected
     ) {
-        UUID sessionId = session.getId();
         UUID sessionTargetId = selected.getId();
 
         SessionTargetBaseline baseline = baselineRepository
@@ -223,8 +222,7 @@ public class OutcomeObservationCollectionScheduler {
                     sessionTargetId,
                     target,
                     baseline,
-                    observation,
-                    session.getSessionType() == LearningSession.SessionType.replay
+                    observation
             );
         }
     }
@@ -234,8 +232,7 @@ public class OutcomeObservationCollectionScheduler {
             UUID sessionTargetId,
             MarketTarget target,
             SessionTargetBaseline baseline,
-            MarketObservation observation,
-            boolean replay
+            MarketObservation observation
     ) {
         LocalDate expectedDate =
                 observation.getExpectedObservationDate();
@@ -269,10 +266,6 @@ public class OutcomeObservationCollectionScheduler {
                         : deadlineDate;
 
         int delaySessions = 0;
-
-        if (replay) {
-            lastCheckDate = expectedDate;
-        }
 
         for (LocalDate date = expectedDate;
              !date.isAfter(lastCheckDate);
@@ -333,7 +326,7 @@ public class OutcomeObservationCollectionScheduler {
 
         // 마감일 당일에는 종가 확정 이후에도 곧바로 종료하지 않음.
         // 다음 현지 날짜에 모든 후보 날짜를 재확인한 뒤 종료.
-        if (today.isAfter(replay ? expectedDate : deadlineDate)) {
+        if (today.isAfter(deadlineDate)) {
             collectionService.expireObservation(
                     sessionId,
                     sessionTargetId,

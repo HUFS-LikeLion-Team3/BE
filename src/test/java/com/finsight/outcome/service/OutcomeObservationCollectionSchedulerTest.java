@@ -15,6 +15,8 @@ import com.finsight.prediction.repository.SessionTargetRepository;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 
@@ -254,8 +256,14 @@ class OutcomeObservationCollectionSchedulerTest {
         );
     }
 
-    @Test
-    void skipsWeekendAndCountsDelaySessions() {
+    @ParameterizedTest
+    @EnumSource(LearningSession.SessionType.class)
+    void collectsNextTradingSessionWhenExpectedCloseIsMissing(LearningSession.SessionType sessionType) {
+        when(session.getSessionType()).thenReturn(sessionType);
+        if (sessionType == LearningSession.SessionType.replay) {
+            when(session.getReplayReferenceAt()).thenReturn(expectedDate.minusMonths(1)
+                    .atStartOfDay(NEW_YORK).toOffsetDateTime());
+        }
         LocalDate monday = expectedDate.plusDays(3);
 
         when(collectionService.collectObservation(
@@ -300,6 +308,7 @@ class OutcomeObservationCollectionSchedulerTest {
                         any(),
                         anyInt()
                 );
+        verify(collectionService, never()).expireObservation(any(), any(), anyInt(), any(), anyString());
     }
 
     @Test

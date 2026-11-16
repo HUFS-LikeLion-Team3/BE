@@ -153,7 +153,7 @@ class LearningSessionMySqlIntegrationTest {
     }
 
     @Test
-    void draftNewsReplayNewsAndReplaySessionCannotBeCreated() throws Exception {
+    void draftNewsAndIneligibleSessionRequestsAreRejected() throws Exception {
         News draft = news("draft", "live");
         mvc.perform(post("/api/v1/learning-sessions")
                         .header("Authorization", auth).contentType("application/json")
@@ -168,5 +168,25 @@ class LearningSessionMySqlIntegrationTest {
                         .header("Authorization", auth).contentType("application/json")
                         .content("{\"newsId\":\"" + replay.getId() + "\",\"sessionType\":\"replay\"}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void featuredReplayNewsCreatesAndReusesTheSameSession() throws Exception {
+        News replay = news("published", "replay");
+        ReflectionTestUtils.setField(replay, "replayStatus", "featured");
+        em.flush();
+        String body = "{\"newsId\":\"" + replay.getId() + "\",\"sessionType\":\"replay\"}";
+
+        String response = mvc.perform(post("/api/v1/learning-sessions")
+                        .header("Authorization", auth).contentType("application/json").content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.sessionType").value("replay"))
+                .andExpect(jsonPath("$.status").value("drafting"))
+                .andReturn().getResponse().getContentAsString();
+        String sessionId = com.jayway.jsonpath.JsonPath.read(response, "$.id");
+        mvc.perform(post("/api/v1/learning-sessions")
+                        .header("Authorization", auth).contentType("application/json").content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(sessionId));
     }
 }

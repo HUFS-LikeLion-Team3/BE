@@ -63,7 +63,8 @@ class PredictionServiceTest {
                 targetRepo,
                 predictionRepo,
                 publisher,
-                entityManager
+                entityManager,
+                mock(com.finsight.learning.service.LearningSessionStatusService.class)
         );
 
         // 뉴스 후보 검증 조회 Mock
@@ -150,6 +151,29 @@ class PredictionServiceTest {
         verify(publisher).publishEvent(any(PredictionSubmittedEvent.class));
         ApiException conflict = assertThrows(ApiException.class, () -> service.submit(userId, sessionId));
         assertEquals(HttpStatus.CONFLICT, conflict.getStatus());
+    }
+
+    @Test
+    void replaySubmitStoresHistoricalReferenceSeparatelyFromSubmissionTime() {
+        LearningSession replay = LearningSession.create(
+                userId, session.getNewsId(), LearningSession.SessionType.replay);
+        var reference = java.time.Instant.parse("2024-01-03T12:00:00Z");
+        var news = mock(com.finsight.news.entity.News.class);
+        when(news.getReferenceAt()).thenReturn(reference);
+        when(entityManager.find(com.finsight.news.entity.News.class, replay.getNewsId())).thenReturn(news);
+        when(sessionRepo.findByIdForUpdate(sessionId)).thenReturn(Optional.of(replay));
+        when(targetRepo.findAllByLearningSessionId(sessionId)).thenReturn(List.of(target));
+        when(predictionRepo.findAllBySessionTargetIdIn(List.of(targetId))).thenReturn(fullPredictions(true));
+
+        var response = service.submit(userId, sessionId);
+
+        assertEquals("baseline_pending", response.status());
+        assertEquals(reference, replay.getReplayReferenceAt().toInstant());
+        assertEquals(response.submittedAt(), replay.getSubmittedAt());
+        assertTrue(response.submittedAt().toInstant().isAfter(reference));
+        assertNull(replay.getResultsRevealedAt());
+        verify(publisher).publishEvent(new PredictionSubmittedEvent(
+                sessionId, userId, response.submittedAt(), replay.getReplayReferenceAt()));
     }
 
     @Test

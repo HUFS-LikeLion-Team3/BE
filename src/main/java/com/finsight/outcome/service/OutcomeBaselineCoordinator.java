@@ -146,8 +146,7 @@ public class OutcomeBaselineCoordinator {
                 ));
 
         if (session.getSubmittedAt() == null
-                || session.getSessionType()
-                != LearningSession.SessionType.live
+                || !LearningSession.supportsOutcomeCollection(session)
                 || (session.getStatus()
                 != LearningSession.LearningStatus.baseline_pending
                 && session.getStatus()
@@ -224,7 +223,7 @@ public class OutcomeBaselineCoordinator {
                 OutcomeScheduleService.BaselineSchedule schedule =
                         scheduleService.calculateBaselineSchedule(
                                 target,
-                                session.getSubmittedAt()
+                                LearningSession.outcomeReferenceAt(session)
                         );
 
                 collectionService.initializeBaseline(

@@ -121,6 +121,13 @@ public class FeedbackGenerationInputBuilder {
                         )
                 );
 
+        boolean historical = !includeResults
+                && session.getSessionType() == LearningSession.SessionType.replay;
+        if (historical && (news.getPublishedAt() == null
+                || news.getPublishedAt().isAfter(cutoff.toInstant()))) {
+            throw new IllegalStateException("Replay news was not published at the evidence cutoff");
+        }
+
         List<SessionTarget> selectedTargets =
                 selectedTargets(sessionId);
 
@@ -225,6 +232,10 @@ public class FeedbackGenerationInputBuilder {
 
         List<Map<String, Object>> factSnapshots =
                 facts.stream()
+                        .filter(fact -> !historical
+                                || (fact.getAsOfAt() != null && !fact.getAsOfAt().isAfter(cutoff.toInstant())
+                                    && (fact.getSourceDocument() == null
+                                        || availableBy(fact.getSourceDocument(), cutoff))))
                         .map(fact -> map(
                                 "id",
                                 fact.getId().toString(),
@@ -260,7 +271,8 @@ public class FeedbackGenerationInputBuilder {
                 collectDocuments(
                         news.getId(),
                         marketTargetIds,
-                        cutoff
+                        cutoff,
+                        historical
                 );
 
         Map<UUID, FeedbackGenerationInput.EvidenceChunk>
@@ -312,6 +324,9 @@ public class FeedbackGenerationInputBuilder {
                         "approvedSources",
                         sourceSnapshots
                 );
+        if (historical) {
+            requestSnapshot.put("submittedAt", session.getSubmittedAt().toString());
+        }
 
         String inputHash = hash(requestSnapshot);
 
@@ -507,7 +522,8 @@ public class FeedbackGenerationInputBuilder {
     private Map<UUID, FeedbackSourceDocument> collectDocuments(
             UUID newsId,
             List<UUID> marketTargetIds,
-            OffsetDateTime cutoff
+            OffsetDateTime cutoff,
+            boolean historical
     ) {
         Map<UUID, FeedbackSourceDocument> result =
                 new LinkedHashMap<>();
@@ -537,7 +553,15 @@ public class FeedbackGenerationInputBuilder {
             }
         }
 
+        if (historical) {
+            result.values().removeIf(document -> !availableBy(document, cutoff));
+        }
         return result;
+    }
+
+    private static boolean availableBy(FeedbackSourceDocument document, OffsetDateTime cutoff) {
+        return document.getPublishedAt() != null && !document.getPublishedAt().isAfter(cutoff)
+                && (document.getAvailableAt() == null || !document.getAvailableAt().isAfter(cutoff));
     }
 
     private List<Map<String, Object>> buildSourceSnapshots(

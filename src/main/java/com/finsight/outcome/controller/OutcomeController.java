@@ -87,13 +87,14 @@ public class OutcomeController {
             String learningSessionId
     ) {
         try {
-            return UUID.fromString(learningSessionId);
-        } catch (IllegalArgumentException e) {
-            throw new ApiException(
-                    HttpStatus.BAD_REQUEST,
-                    "학습 세션 ID 형식이 올바르지 않습니다."
-            );
+            UUID parsed = UUID.fromString(learningSessionId);
+            if (parsed.toString().equalsIgnoreCase(learningSessionId)) {
+                return parsed;
+            }
+        } catch (IllegalArgumentException ignored) {
+            // Return the same error for malformed and noncanonical IDs.
         }
+        throw new ApiException(HttpStatus.BAD_REQUEST, "학습 세션 ID 형식이 올바르지 않습니다.");
     }
 
     private UUID parseSessionTargetId(

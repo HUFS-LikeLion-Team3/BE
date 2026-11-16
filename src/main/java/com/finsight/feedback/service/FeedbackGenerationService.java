@@ -110,19 +110,13 @@ public class FeedbackGenerationService {
         UUID feedbackId = null;
 
         try {
-            AiRagJob initialJob = stage == AiFeedback.FeedbackStage.FINAL
-                    ? jobRepository.findBySessionIdAndStage(sessionId, "initial").orElse(null)
-                    : null;
-            AiFeedback initialFeedback = initialJob == null ? null
-                    : feedbackRepository.findById(initialJob.getFeedbackId()).orElseThrow();
-            String frozenPackageId = initialJob == null ? packageId : initialJob.getPackageId();
             feedbackId = persistence.prepare(
                     sessionId,
                     stage,
-                    initialFeedback == null ? VERSION : initialFeedback.getVersion(),
+                    VERSION,
                     requestId,
-                    initialFeedback == null ? promptVersion : initialFeedback.getPromptVersion(),
-                    initialFeedback == null ? policyVersion : initialFeedback.getPolicyVersion(),
+                    promptVersion,
+                    policyVersion,
                     cutoff
             );
 
@@ -159,7 +153,7 @@ public class FeedbackGenerationService {
                                 : contractMapper.envelope(
                                 feedback,
                                 frozen,
-                                frozenPackageId,
+                                packageId,
                                 firstJobId
                         );
 
@@ -168,7 +162,7 @@ public class FeedbackGenerationService {
                         sessionId,
                         stage.getValue(),
                         feedback.getRequestId(),
-                        frozenPackageId,
+                        packageId,
                         requestJson
                 );
             }

@@ -29,7 +29,7 @@ public class FeedbackSubmissionIntentListener {
     ) {
         intentService.recordInitial(
                 event.learningSessionId(),
-                event.evidenceCutoffAt()
+                event.submittedAt()
         );
     }
 

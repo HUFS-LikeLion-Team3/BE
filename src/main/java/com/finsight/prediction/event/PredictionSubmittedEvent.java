@@ -8,10 +8,5 @@ import java.util.UUID;
  * @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT).
  * No external action is performed until those handlers are implemented.
  */
-public record PredictionSubmittedEvent(
-        UUID learningSessionId, UUID userId, OffsetDateTime submittedAt, OffsetDateTime evidenceCutoffAt
-) {
-    public PredictionSubmittedEvent(UUID learningSessionId, UUID userId, OffsetDateTime submittedAt) {
-        this(learningSessionId, userId, submittedAt, submittedAt);
-    }
+public record PredictionSubmittedEvent(UUID learningSessionId, UUID userId, OffsetDateTime submittedAt) {
 }

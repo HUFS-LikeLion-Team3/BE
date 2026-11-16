@@ -5,7 +5,6 @@ import com.finsight.feedback.entity.AiFeedbackInputSnapshot;
 import com.finsight.feedback.repository.AiFeedbackInputSnapshotRepository;
 import com.finsight.feedback.repository.AiFeedbackRepository;
 import com.finsight.learning.repository.LearningSessionRepository;
-import com.finsight.learning.entity.LearningSession;
 import com.finsight.outcome.entity.MarketObservation;
 import com.finsight.outcome.entity.SessionTargetBaseline;
 import com.finsight.outcome.repository.MarketObservationRepository;
@@ -142,10 +141,10 @@ public class AiRagFinalInputBuilder {
             );
         }
 
-        OffsetDateTime evidenceCutoffAt;
+        OffsetDateTime submittedAt;
 
         try {
-            evidenceCutoffAt = OffsetDateTime.parse(
+            submittedAt = OffsetDateTime.parse(
                     (String) original.get("inputCutoffAt")
             );
 
@@ -163,8 +162,10 @@ public class AiRagFinalInputBuilder {
                         )
                 );
 
-        OffsetDateTime sessionCutoffAt = LearningSession.outcomeReferenceAt(session);
-        if (sessionCutoffAt == null || !sessionCutoffAt.isEqual(evidenceCutoffAt)) {
+        if (session.getSubmittedAt() == null
+                || !session.getSubmittedAt()
+                .toInstant()
+                .equals(submittedAt.toInstant())) {
             throw new IllegalStateException(
                     "initial_submission_changed"
             );
@@ -362,10 +363,10 @@ public class AiRagFinalInputBuilder {
 
         frozen.put("feedbackStage", "final");
 
-        // 최초 자료 기준 시각과 결과 종료 시각은 별도 유지
+        // 최초 제출 시각과 결과 종료 시각은 별도 유지
         frozen.put(
                 "inputCutoffAt",
-                evidenceCutoffAt.toString()
+                submittedAt.toString()
         );
 
         frozen.put(

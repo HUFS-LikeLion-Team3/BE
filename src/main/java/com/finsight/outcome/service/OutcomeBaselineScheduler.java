@@ -90,7 +90,8 @@ public class OutcomeBaselineScheduler {
 
             for (LearningSession session : page.getContent()) {
 
-                if (!LearningSession.supportsOutcomeCollection(session)) {
+                if (session.getSessionType()
+                        != LearningSession.SessionType.live) {
                     continue;
                 }
 

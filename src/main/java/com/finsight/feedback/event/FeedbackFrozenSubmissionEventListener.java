@@ -35,7 +35,7 @@ public class FeedbackFrozenSubmissionEventListener {
     ) {
         coordinator.freezeInitial(
                 event.learningSessionId(),
-                event.evidenceCutoffAt()
+                event.submittedAt()
         );
     }
 

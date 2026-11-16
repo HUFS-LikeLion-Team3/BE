@@ -157,9 +157,9 @@ public class OutcomeCollectionService {
 
             if (close.asOfAt() == null
                     || !close.asOfAt().isAfter(
-                    LearningSession.outcomeReferenceAt(session))) {
+                    session.getSubmittedAt())) {
                 throw new IllegalStateException(
-                        "Baseline must occur after the session reference time"
+                        "Baseline must occur after submission"
                 );
             }
 
@@ -214,7 +214,7 @@ public class OutcomeCollectionService {
                             sessionTargetId,
                             baseline.getId(),
                             horizon,
-                            LearningSession.outcomeReferenceAt(session),
+                            session.getSubmittedAt(),
                             null,
                             null,
                             baseline.getUnit()
@@ -536,7 +536,8 @@ public class OutcomeCollectionService {
 
     private void requireActiveSession(LearningSession session) {
         if (session.getSubmittedAt() == null
-                || !LearningSession.supportsOutcomeCollection(session)
+                || session.getSessionType()
+                != LearningSession.SessionType.live
                 || (session.getStatus()
                 != LearningSession.LearningStatus.baseline_pending
                 && session.getStatus()

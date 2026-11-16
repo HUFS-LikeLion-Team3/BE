@@ -97,7 +97,8 @@ public class DailyOutcomeScheduler {
                 );
 
                 page.getContent().stream()
-                        .filter(s -> LearningSession.supportsOutcomeCollection(s))
+                        .filter(s -> s.getSessionType()
+                                == LearningSession.SessionType.live)
                         .filter(s -> s.getSubmittedAt() != null)
                         .map(LearningSession::getId)
                         .forEach(ids::add);
@@ -128,7 +129,8 @@ public class DailyOutcomeScheduler {
 
         if (session == null
                 || session.getSubmittedAt() == null
-                || !LearningSession.supportsOutcomeCollection(session)
+                || session.getSessionType()
+                != LearningSession.SessionType.live
                 || !ACTIVE.contains(session.getStatus())) {
             return;
         }
@@ -174,7 +176,6 @@ public class DailyOutcomeScheduler {
     ) {
         UUID sessionId = session.getId();
         UUID targetId = selected.getId();
-        boolean replay = session.getSessionType() == LearningSession.SessionType.replay;
 
         SessionTargetBaseline baseline = baselineRepository
                 .findBySessionTargetId(targetId)
@@ -182,7 +183,7 @@ public class DailyOutcomeScheduler {
 
         if (baseline == null) {
             LocalDate expected =
-                    firstDate(market, LearningSession.outcomeReferenceAt(session));
+                    firstDate(market, session.getSubmittedAt());
 
             collectionService.initializeBaseline(
                     sessionId,
@@ -203,7 +204,7 @@ public class DailyOutcomeScheduler {
         if (baseline.getStatus()
                 == SessionTargetBaseline.BaselineStatus.pending) {
 
-            collectBaseline(sessionId, targetId, market, baseline, replay);
+            collectBaseline(sessionId, targetId, market, baseline);
 
             baseline = baselineRepository
                     .findBySessionTargetId(targetId)
@@ -265,8 +266,7 @@ public class DailyOutcomeScheduler {
                 targetId,
                 market,
                 baseline,
-                observations,
-                replay
+                observations
         );
     }
 
@@ -274,8 +274,7 @@ public class DailyOutcomeScheduler {
             UUID sessionId,
             UUID targetId,
             MarketTarget market,
-            SessionTargetBaseline baseline,
-            boolean replay
+            SessionTargetBaseline baseline
     ) {
         LocalDate expected = baseline.getExpectedBaselineDate();
 
@@ -290,15 +289,10 @@ public class DailyOutcomeScheduler {
             return;
         }
 
-        LocalDate deadline = baseline.getBaselineDeadlineDate();
-        LocalDate lastDay = replay && deadline != null && deadline.isBefore(today) ? deadline : today;
-        List<LocalDate> firstPublished = publishedDates(market, expected, lastDay, 1);
+        List<LocalDate> firstPublished =
+                publishedDates(market, expected, today, 1);
 
         if (firstPublished.isEmpty()) {
-            if (replay && deadline != null && today.isAfter(deadline)
-                    && confirmedMissing(market, expected, deadline, 1)) {
-                collectionService.expireBaseline(sessionId, targetId, "REPLAY_BASELINE_DATA_MISSING");
-            }
             return;
         }
 
@@ -341,8 +335,7 @@ public class DailyOutcomeScheduler {
             UUID targetId,
             MarketTarget market,
             SessionTargetBaseline baseline,
-            List<MarketObservation> observations,
-            boolean replay
+            List<MarketObservation> observations
     ) {
         List<MarketObservation> pending = observations.stream()
                 .filter(o -> HORIZONS.contains(o.getHorizon()))
@@ -397,12 +390,6 @@ public class DailyOutcomeScheduler {
             int horizon = observation.getHorizon();
 
             if (published.size() < horizon) {
-                if (replay && today.isAfter(estimatedDeadline)
-                        && confirmedMissing(market, start, estimatedDeadline, horizon)) {
-                    collectionService.expireObservation(
-                            sessionId, targetId, horizon,
-                            MarketObservation.OutcomeExceptionStatus.data_missing, "REPLAY_OBSERVATION_DATA_MISSING");
-                }
                 continue;
             }
 
@@ -492,22 +479,6 @@ public class DailyOutcomeScheduler {
         }
 
         return published;
-    }
-
-    private boolean confirmedMissing(MarketTarget market, LocalDate start, LocalDate end, int required) {
-        int available = 0;
-        for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
-            if (!isFinalized(market, date)) {
-                return false;
-            }
-            var result = marketDataService.regularCloseOn(market, date);
-            if (result.status() == MarketDataProvider.Status.ready) {
-                available++;
-            } else if (!missing(result)) {
-                return false;
-            }
-        }
-        return available < required;
     }
 
     private boolean isFinalized(

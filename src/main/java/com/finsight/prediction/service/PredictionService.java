@@ -3,8 +3,6 @@ package com.finsight.prediction.service;
 import com.finsight.global.exception.ApiException;
 import com.finsight.learning.entity.LearningSession;
 import com.finsight.learning.repository.LearningSessionRepository;
-import com.finsight.learning.service.LearningSessionStatusService;
-import com.finsight.news.entity.News;
 import com.finsight.prediction.dto.*;
 import com.finsight.prediction.entity.Prediction;
 import com.finsight.prediction.entity.SessionTarget;
@@ -36,7 +34,6 @@ public class PredictionService {
     private final PredictionRepository predictionRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final EntityManager entityManager;
-    private final LearningSessionStatusService statusService;
 
     @Transactional
     public PredictionUpdateResponse update(
@@ -136,25 +133,12 @@ public class PredictionService {
         }
 
         OffsetDateTime submittedAt = OffsetDateTime.now(KOREA_ZONE);
-        OffsetDateTime replayReferenceAt = null;
-        if (session.getSessionType() == LearningSession.SessionType.replay) {
-            News news = entityManager.find(News.class, session.getNewsId());
-            if (news == null || news.getReferenceAt() == null
-                    || news.getReferenceAt().isAfter(submittedAt.toInstant())) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "Replay 뉴스의 과거 기준 시점을 확인할 수 없습니다.");
-            }
-            replayReferenceAt = news.getReferenceAt().atZone(KOREA_ZONE).toOffsetDateTime();
-        }
         for (Prediction prediction : predictions) {
             prediction.markSubmitted(submittedAt);
         }
-        session.markSubmitted(submittedAt, replayReferenceAt);
-        if (replayReferenceAt != null) {
-            statusService.reconcile(sessionId);
-        }
+        session.markSubmitted(submittedAt);
         // Listeners must use @TransactionalEventListener(AFTER_COMMIT) for T0/AI requests.
-        eventPublisher.publishEvent(new PredictionSubmittedEvent(
-                sessionId, userId, submittedAt, LearningSession.outcomeReferenceAt(session)));
+        eventPublisher.publishEvent(new PredictionSubmittedEvent(sessionId, userId, submittedAt));
         return new PredictionSubmitResponse(sessionId, session.getStatus().name(), submittedAt);
     }
 

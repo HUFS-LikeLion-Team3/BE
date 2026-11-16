@@ -191,8 +191,6 @@ public class OutcomeService {
             );
         }
 
-        requireReplayResultsRevealed(session);
-
         if (session.getSubmittedAt() == null
                 || !target.isSelected()) {
             throw new ApiException(
@@ -235,7 +233,18 @@ public class OutcomeService {
 
         OutcomeResponse.BaselineResponse baselineResponse =
                 baseline == null
-                        ? pendingBaseline(unit)
+                        ? new OutcomeResponse.BaselineResponse(
+                        "pending",
+                        null,
+                        null,
+                        null,
+                        unit,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null
+                )
                         : OutcomeResponse.BaselineResponse.from(baseline);
 
         List<MarketObservation> storedObservations =
@@ -311,21 +320,6 @@ public class OutcomeService {
         );
     }
 
-    private static void requireReplayResultsRevealed(LearningSession session) {
-        if (session.getSessionType() == LearningSession.SessionType.replay
-                && (session.getSubmittedAt() == null
-                    || session.getStatus() == LearningSession.LearningStatus.drafting
-                    || session.getResultsRevealedAt() == null)) {
-            throw new ApiException(HttpStatus.FORBIDDEN,
-                    "예측 제출 또는 결과 공개가 완료되지 않아 시장 결과를 조회할 수 없습니다.");
-        }
-    }
-
-    private static OutcomeResponse.BaselineResponse pendingBaseline(String unit) {
-        return new OutcomeResponse.BaselineResponse(
-                "pending", null, null, null, unit, null, null, null, null, null);
-    }
-
     private OutcomeResponse.ObservationResponse pendingObservation(
             int horizon,
             SessionTargetBaseline baseline,
@@ -381,7 +375,6 @@ public class OutcomeService {
             LearningSession session,
             String forbiddenMessage
     ) {
-        requireReplayResultsRevealed(session);
         if (session.getSubmittedAt() == null) {
             throw new ApiException(
                     HttpStatus.FORBIDDEN,

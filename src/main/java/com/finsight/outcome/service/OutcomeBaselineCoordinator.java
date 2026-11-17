@@ -146,8 +146,7 @@ public class OutcomeBaselineCoordinator {
                 ));
 
         if (session.getSubmittedAt() == null
-                || session.getSessionType()
-                != LearningSession.SessionType.live
+                || !LearningSession.supportsOutcomeCollection(session)
                 || (session.getStatus()
                 != LearningSession.LearningStatus.baseline_pending
                 && session.getStatus()
@@ -224,7 +223,7 @@ public class OutcomeBaselineCoordinator {
                 OutcomeScheduleService.BaselineSchedule schedule =
                         scheduleService.calculateBaselineSchedule(
                                 target,
-                                session.getSubmittedAt()
+                                LearningSession.outcomeReferenceAt(session)
                         );
 
                 collectionService.initializeBaseline(
@@ -265,12 +264,15 @@ public class OutcomeBaselineCoordinator {
             }
 
             ZoneId timezone = ZoneId.of(target.getTimezone());
+            // A Replay is submitted today but its historical T0 deadline has
+            // already passed. Check the old sessions *before* expiring it.
+            boolean replay = session.getSessionType() == LearningSession.SessionType.replay;
 
             LocalDate today = clock.instant()
                     .atZone(timezone)
                     .toLocalDate();
 
-            if (hasDeadlineElapsed(
+            if (!replay && hasDeadlineElapsed(
                     target,
                     deadlineDate,
                     clock.instant()
@@ -300,7 +302,7 @@ public class OutcomeBaselineCoordinator {
                     continue;
                 }
 
-                if (hasDeadlineElapsed(
+                if (!replay && hasDeadlineElapsed(
                         target,
                         deadlineDate,
                         clock.instant()

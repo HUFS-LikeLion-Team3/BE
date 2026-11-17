@@ -97,11 +97,60 @@ class LearningSessionServiceTest {
     }
 
     @Test
-    void replayIsRejectedEvenWhenAnExistingSessionCouldBeFound() {
+    void unsupportedSessionTypeIsRejectedBeforeLookup() {
         ApiException error = assertThrows(ApiException.class,
-                () -> service.createOrGet(owner, newsId, "replay"));
+                () -> service.createOrGet(owner, newsId, "unknown"));
         assertEquals(HttpStatus.BAD_REQUEST, error.getStatus());
         verifyNoInteractions(users, sessions, news);
+    }
+
+    @Test
+    void replayRequestConflictsWithAnExistingLiveSession() {
+        authenticatedUser();
+        when(sessions.findByUserIdAndNewsId(owner, newsId))
+                .thenReturn(Optional.of(LearningSession.create(owner, newsId)));
+
+        ApiException error = assertThrows(ApiException.class,
+                () -> service.createOrGet(owner, newsId, "replay"));
+        assertEquals(HttpStatus.CONFLICT, error.getStatus());
+        assertEquals("해당 뉴스는 이미 Live 학습 이력이 있어 Replay 세션을 생성할 수 없습니다.", error.getMessage());
+        verifyNoInteractions(news);
+        verify(sessions, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void eligibleReplayNewsCreatesDraftSession() {
+        authenticatedUser();
+        News item = mock(News.class);
+        when(item.getContentType()).thenReturn("replay");
+        when(item.getReplayStatus()).thenReturn("eligible");
+        when(news.findByIdAndStatus(newsId, "published")).thenReturn(Optional.of(item));
+        when(sessions.saveAndFlush(any(LearningSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = service.createOrGet(owner, newsId, "replay");
+
+        assertTrue(result.created());
+        assertEquals(LearningSession.SessionType.replay, result.session().getSessionType());
+        assertEquals(LearningSession.LearningStatus.drafting, result.session().getStatus());
+    }
+
+    @Test
+    void completedReplaySessionIsReusedWithoutRecheckingNews() {
+        authenticatedUser();
+        LearningSession existing = LearningSession.create(owner, newsId, LearningSession.SessionType.replay);
+        OffsetDateTime submitted = OffsetDateTime.parse("2026-10-05T10:00:00+09:00");
+        existing.markSubmitted(submitted);
+        existing.markCompleted(submitted.plusHours(1));
+        when(sessions.findByUserIdAndNewsId(owner, newsId)).thenReturn(Optional.of(existing));
+
+        var result = service.createOrGet(owner, newsId, "replay");
+
+        assertFalse(result.created());
+        assertSame(existing, result.session());
+        assertEquals(submitted, result.session().getSubmittedAt());
+        assertEquals(LearningSession.LearningStatus.completed, result.session().getStatus());
+        verifyNoInteractions(news);
+        verify(sessions, never()).saveAndFlush(any());
     }
 
     @Test

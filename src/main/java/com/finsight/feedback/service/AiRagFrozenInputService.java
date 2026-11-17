@@ -109,10 +109,9 @@ public class AiRagFrozenInputService {
                         )
                 );
 
-        if (session.getSubmittedAt() == null
-                || !session.getSubmittedAt()
-                .toInstant()
-                .equals(submittedAt.toInstant())) {
+        OffsetDateTime evidenceCutoffAt = LearningSession.outcomeReferenceAt(session);
+        if (session.getSubmittedAt() == null || evidenceCutoffAt == null
+                || !evidenceCutoffAt.isEqual(submittedAt)) {
             throw new IllegalStateException(
                     "initial_submission_changed"
             );

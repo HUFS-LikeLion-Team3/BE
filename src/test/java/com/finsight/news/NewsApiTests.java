@@ -252,7 +252,7 @@ class NewsApiTests {
                     "DIRECTION_LABELS","UNIT","CALENDAR_CODE","TIMEZONE","DATA_SYMBOL","IS_ACTIVE","CREATED_AT","UPDATED_AT"),
             "NEWS_TARGET_CANDIDATES", Set.of("NEWS_ID","MARKET_TARGET_ID","RATIONALE","SORT_ORDER"),
             "SOURCE_DOCUMENTS", Set.of("ID","NEWS_ID","SOURCE_TYPE","SELECTION_TIER","PUBLISHER",
-                    "TITLE","URL","PUBLISHED_AT","IS_PRIMARY","CONTENT_HASH","CONTENT_STORAGE_URI",
+                    "TITLE","URL","PUBLISHED_AT","AVAILABLE_AT","IS_PRIMARY","CONTENT_HASH","CONTENT_STORAGE_URI",
                     "RETRIEVED_AT","CREATED_AT","UPDATED_AT"),
             "NEWS_FACTS", Set.of("ID","NEWS_ID","SOURCE_DOCUMENT_ID","LABEL","VALUE_TEXT","UNIT","AS_OF_AT","SORT_ORDER"));
         expected.forEach((table, columns) -> assertEquals(columns, new HashSet<>(jdbc.queryForList(

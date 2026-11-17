@@ -274,6 +274,8 @@ Table source_documents {
 
   published_at timestamptz [not null, note: '승인 완료 자료는 공개 시각 필수']
 
+  available_at timestamptz [note: '자료가 실제로 사용 가능해진 시각. 미기록이면 published_at을 기준으로 판정']
+
   is_primary boolean [not null, default: false]
 
   content_hash varchar [not null, note: '본문 변경 시 새 문서 ID와 새 조각으로 저장. 기존 본문·인용은 불변 보존']
@@ -431,7 +433,9 @@ Table learning_sessions {
 
   status learning_status [not null, default: 'drafting']
 
-  results_revealed_at timestamptz
+  results_revealed_at timestamptz [note: 'Replay 사용자가 결과 보기 버튼을 클릭한 시각. 관측 종료 시 자동 설정 금지']
+
+  replay_reference_at timestamptz [note: 'Replay 결과·INITIAL AI의 과거 기준시각(News.reference_at)']
 
   saved_at timestamptz
 
@@ -448,7 +452,7 @@ Table learning_sessions {
     (user_id, updated_at)
   }
 
-  Note: 'P0는 live만 생성. 화면 진입 시 생성하지 않으며 임시 저장·최종 제출 흐름에서 생성. 같은 사용자·뉴스의 기존 세션 재사용. 최종 회고 저장으로 completed 전환; AI 생성 상태와 분리.'
+  Note: 'P0는 live, P1는 replay 생성 허용. 같은 사용자·뉴스의 기존 세션 재사용. Replay 결과 공개는 별도 사용자 클릭으로만 허용하며 INITIAL 피드백 ready 검증 필요. 최종 회고 저장으로 completed 전환; AI 생성 상태와 분리.'
 }
 
 // =====================================================

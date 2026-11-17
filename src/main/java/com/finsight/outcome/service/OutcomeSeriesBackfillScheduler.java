@@ -88,7 +88,7 @@ public class OutcomeSeriesBackfillScheduler {
             }
 
             for (LearningSession session : page.getContent()) {
-                if (session.getSessionType() != LearningSession.SessionType.live
+                if (!LearningSession.supportsOutcomeCollection(session)
                         || session.getSubmittedAt() == null) {
                     continue;
                 }

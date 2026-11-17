@@ -386,4 +386,25 @@ class OutcomeBaselineCoordinatorTest {
                 marketDataService
         );
     }
+
+    @Test
+    void replayCollectsHistoricalT0BeforeTreatingExpiredDeadlineAsMissing() {
+        OffsetDateTime pastReference = OffsetDateTime.now(NEW_YORK).minusMonths(3);
+        LocalDate firstHistoricSession = today.minusMonths(3);
+        LocalDate pastDeadline = firstHistoricSession.plusDays(15);
+        when(session.getSessionType()).thenReturn(LearningSession.SessionType.replay);
+        when(session.getReplayReferenceAt()).thenReturn(pastReference);
+
+        SessionTargetBaseline historicalBaseline =
+                pendingBaseline(firstHistoricSession, pastDeadline);
+        when(baselineRepository.findBySessionTargetId(sessionTargetId))
+                .thenReturn(Optional.of(historicalBaseline));
+        mockOpenSession(firstHistoricSession);
+        when(collectionService.collectBaseline(sessionId, sessionTargetId, firstHistoricSession))
+                .thenReturn(MarketDataProvider.Status.ready);
+
+        var results = coordinator.runOnce(sessionId);
+        assertEquals(OutcomeBaselineCoordinator.AttemptStatus.READY, results.getFirst().status());
+        assertEquals(firstHistoricSession, results.getFirst().checkedDate());
+    }
 }

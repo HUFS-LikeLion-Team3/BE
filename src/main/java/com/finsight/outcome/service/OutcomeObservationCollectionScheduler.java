@@ -118,8 +118,7 @@ public class OutcomeObservationCollectionScheduler {
             );
 
             for (LearningSession session : page.getContent()) {
-                if (session.getSessionType()
-                        != LearningSession.SessionType.live) {
+                if (!LearningSession.supportsOutcomeCollection(session)) {
                     continue;
                 }
 
@@ -142,8 +141,7 @@ public class OutcomeObservationCollectionScheduler {
 
         if (session == null
                 || session.getSubmittedAt() == null
-                || session.getSessionType()
-                != LearningSession.SessionType.live
+                || !LearningSession.supportsOutcomeCollection(session)
                 || (session.getStatus()
                 != LearningSession.LearningStatus.baseline_pending
                 && session.getStatus()

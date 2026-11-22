@@ -134,12 +134,18 @@ public class NewsService {
         if (replayStatus != null) {
             query.append(" and n.replayStatus = :replayStatus");
             parameters.put("replayStatus", replayStatus);
+        } else if ("replay".equals(contentType)) {
+            // Default Replay list contains only news eligible for session creation.
+            query.append(" and n.replayStatus in (:eligibleReplayStatuses)");
+            parameters.put("eligibleReplayStatuses", List.of("eligible", "featured"));
         }
 
+        // Live filters publication date; Replay filters the historical event date.
+        String dateField = "replay".equals(contentType)
+                ? "n.referenceAt" : "n.publishedAt";
+
         if (from != null) {
-            query.append(
-                    " and n.publishedAt >= :fromInclusive"
-            );
+            query.append(" and " + dateField + " >= :fromInclusive");
 
             parameters.put(
                     "fromInclusive",
@@ -148,9 +154,7 @@ public class NewsService {
         }
 
         if (to != null) {
-            query.append(
-                    " and n.publishedAt < :toExclusive"
-            );
+            query.append(" and " + dateField + " < :toExclusive");
 
             parameters.put(
                     "toExclusive",

@@ -296,6 +296,8 @@ class NewsApiTests {
         News first = news("a", "published", "live", at, Set.of(), Set.of());
         News second = news("b", "published", "live", at, Set.of(), Set.of());
         News replay = news("replay", "published", "replay", at, Set.of(), Set.of());
+        ReflectionTestUtils.setField(replay, "replayStatus", "featured");
+        em.flush();
         List<String> expected = java.util.stream.Stream.of(first, second)
                 .map(n -> n.getId().toString()).sorted().toList();
         for (String sort : List.of("latest", "recommended")) {
@@ -315,6 +317,37 @@ class NewsApiTests {
         mvc.perform(get("/api/v1/news").header("Authorization", token).param("page", "10"))
                 .andExpect(jsonPath("$.content.length()").value(0)).andExpect(jsonPath("$.hasNext").value(false));
     }
+    @Test void replayDefaultsToEligibleAndFeaturedAndUsesHistoricalReferenceDate() throws Exception {
+        Instant publication = Instant.parse("2026-11-01T09:00:00Z");
+        News eligible = news("eligible", "published", "replay", publication, Set.of(), Set.of());
+        News featured = news("featured", "published", "replay", publication.plusSeconds(1), Set.of(), Set.of());
+        News ineligible = news("ineligible", "published", "replay", publication.plusSeconds(2), Set.of(), Set.of());
+        ReflectionTestUtils.setField(eligible, "replayStatus", "eligible");
+        ReflectionTestUtils.setField(featured, "replayStatus", "featured");
+        ReflectionTestUtils.setField(eligible, "referenceAt", Instant.parse("2020-01-15T02:00:00Z"));
+        ReflectionTestUtils.setField(featured, "referenceAt", Instant.parse("2021-07-10T02:00:00Z"));
+        ReflectionTestUtils.setField(ineligible, "referenceAt", Instant.parse("2020-01-15T02:00:00Z"));
+        em.flush();
+
+        mvc.perform(get("/api/v1/news").header("Authorization", token).param("contentType", "replay"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].id").value(featured.getId().toString()))
+                .andExpect(jsonPath("$.content[1].id").value(eligible.getId().toString()));
+
+        mvc.perform(get("/api/v1/news").header("Authorization", token)
+                        .param("contentType", "replay").param("from", "2020-01-01").param("to", "2020-12-31"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(eligible.getId().toString()));
+
+        mvc.perform(get("/api/v1/news").header("Authorization", token)
+                        .param("contentType", "replay").param("replayStatus", "not_eligible"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(ineligible.getId().toString()));
+    }
+
     @Test void factsMatchContractAndOnlyExposePublishedNews() throws Exception {
         Instant at = Instant.parse("2026-10-01T09:00:00Z");
         News n = news("facts", "published", "live", at, Set.of(), Set.of());

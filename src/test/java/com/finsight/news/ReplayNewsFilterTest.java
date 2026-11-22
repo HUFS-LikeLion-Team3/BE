@@ -82,7 +82,7 @@ class ReplayNewsFilterTest {
     }
 
     @Test
-    void replayListWithoutStatusPreservesExistingContract() {
+    void replayListWithoutStatusIncludesOnlySessionEligibleStatuses() {
         mockEmptyQuery();
 
         var result = service.list(
@@ -101,7 +101,7 @@ class ReplayNewsFilterTest {
                         query.contains(
                                 "n.contentType = :contentType"
                         )
-                                && !query.contains("n.replayStatus")
+                                && query.contains("n.replayStatus in (:eligibleReplayStatuses)")
                 ),
                 eq(News.class)
         );
@@ -110,6 +110,12 @@ class ReplayNewsFilterTest {
                 "contentType",
                 "replay"
         );
+
+        verify(typedQuery).setParameter(
+                "eligibleReplayStatuses",
+                List.of("eligible", "featured")
+        );
+        verify(typedQuery, never()).setParameter(eq("replayStatus"), any());
 
         assertTrue(result.content().isEmpty());
     }
@@ -140,10 +146,10 @@ class ReplayNewsFilterTest {
         verify(entityManager).createQuery(
                 argThat(query ->
                         query.contains(
-                                "n.publishedAt >= :fromInclusive"
+                                "n.referenceAt >= :fromInclusive"
                         )
                                 && query.contains(
-                                "n.publishedAt < :toExclusive"
+                                "n.referenceAt < :toExclusive"
                         )
                                 && query.contains(
                                 "c.target.id = :marketTargetId"
@@ -197,6 +203,52 @@ class ReplayNewsFilterTest {
         );
 
         verifyNoInteractions(entityManager);
+    }
+
+    @Test
+    void liveDateRangeStillUsesPublishedAt() {
+        mockEmptyQuery();
+
+        service.list(
+                userId,
+                null,
+                "all",
+                "live",
+                null,
+                "latest",
+                0,
+                20,
+                LocalDate.of(2026, 1, 1),
+                LocalDate.of(2026, 12, 31),
+                null
+        );
+
+        verify(entityManager).createQuery(
+                argThat(query ->
+                        query.contains("n.publishedAt >= :fromInclusive")
+                                && query.contains("n.publishedAt < :toExclusive")
+                                && !query.contains("n.referenceAt")
+                                && !query.contains("eligibleReplayStatuses")
+                ),
+                eq(News.class)
+        );
+    }
+
+    @Test
+    void explicitlyFilteringNotEligibleReplayStillWorks() {
+        mockEmptyQuery();
+
+        service.list(userId, null, "all", "replay", "not_eligible", "latest", 0, 20);
+
+        verify(entityManager).createQuery(
+                argThat(query ->
+                        query.contains("n.replayStatus = :replayStatus")
+                                && !query.contains("eligibleReplayStatuses")
+                ),
+                eq(News.class)
+        );
+        verify(typedQuery).setParameter("replayStatus", "not_eligible");
+        verify(typedQuery, never()).setParameter(eq("eligibleReplayStatuses"), any());
     }
 
     @Test

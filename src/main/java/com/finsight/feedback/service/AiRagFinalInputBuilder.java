@@ -1,3 +1,4 @@
+
 package com.finsight.feedback.service;
 
 import com.finsight.feedback.entity.AiFeedback;
@@ -12,8 +13,8 @@ import com.finsight.outcome.repository.MarketObservationRepository;
 import com.finsight.outcome.repository.SessionTargetBaselineRepository;
 import com.finsight.reflection.repository.ReflectionNoteRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
@@ -32,7 +33,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
+@Slf4j
 public class AiRagFinalInputBuilder {
 
     private final AiFeedbackRepository feedbackRepository;
@@ -109,6 +110,25 @@ public class AiRagFinalInputBuilder {
             UUID sessionId,
             OffsetDateTime outcomeCutoffAt
     ) {
+        try {
+            return buildSnapshot(sessionId, outcomeCutoffAt);
+        } catch (RuntimeException exception) {
+            log.error(
+                    "FINAL AI input build failed: sessionId={}, outcomeCutoffAt={}, exceptionType={}, reason={}",
+                    sessionId,
+                    outcomeCutoffAt,
+                    exception.getClass().getSimpleName(),
+                    exception.getMessage(),
+                    exception
+            );
+            throw exception;
+        }
+    }
+
+    private FeedbackGenerationInput buildSnapshot(
+            UUID sessionId,
+            OffsetDateTime outcomeCutoffAt
+    ) {
         AiFeedback first = feedbackRepository
                 .findByLearningSessionIdAndFeedbackStageAndVersion(
                         sessionId,
@@ -163,8 +183,11 @@ public class AiRagFinalInputBuilder {
                         )
                 );
 
-        OffsetDateTime sessionCutoffAt = LearningSession.outcomeReferenceAt(session);
-        if (sessionCutoffAt == null || !sessionCutoffAt.isEqual(evidenceCutoffAt)) {
+        OffsetDateTime sessionCutoffAt =
+                LearningSession.outcomeReferenceAt(session);
+
+        if (sessionCutoffAt == null
+                || !sessionCutoffAt.isEqual(evidenceCutoffAt)) {
             throw new IllegalStateException(
                     "initial_submission_changed"
             );
@@ -272,7 +295,9 @@ public class AiRagFinalInputBuilder {
                                 "status",
                                 observation.getStatus().name(),
                                 "exceptionStatus",
-                                observation.getExceptionStatus().name(),
+                                observation.getExceptionStatus() == null
+                                        ? null
+                                        : observation.getExceptionStatus().name(),
                                 "referenceAt",
                                 str(observation.getReferenceAt()),
                                 "expectedObservationDate",
@@ -362,7 +387,6 @@ public class AiRagFinalInputBuilder {
 
         frozen.put("feedbackStage", "final");
 
-        // 최초 자료 기준 시각과 결과 종료 시각은 별도 유지
         frozen.put(
                 "inputCutoffAt",
                 evidenceCutoffAt.toString()

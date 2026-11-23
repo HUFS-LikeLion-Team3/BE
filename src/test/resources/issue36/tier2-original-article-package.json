@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "1",
+  "kind": "local_demo",
+  "mappingVerification": "synthetic fixture only",
+  "marketMapping": {},
+  "documents": [
+    {
+      "document": {
+        "id": "c757a8f8-bd94-5079-bb6c-3a40d9dfd31d",
+        "title": "[대역 자료] 로컬 연동 확인",
+        "published_at": "2026-10-01T00:00:00Z",
+        "content": "FinSight local integration fixture. This text is synthetic and is not market evidence. 승인·인용 저장 연결 검증용 대역 본문입니다.",
+        "content_hash": "dd78bd77074d70fe364f9c337b3dcf9b0c3012d0bef9523a57b16db0b58d1f04",
+        "approval_status": "approved",
+        "linked_news_ids": [],
+        "market_target_ids": [
+          "c5d99dc5-0eff-5509-a1a9-1aa4be9750db"
+        ],
+        "selection_tier": 2,
+        "stored_chunks": [
+          {
+            "id": "ae0ec209-21d1-57c6-b390-d01df6059a59",
+            "start": 0,
+            "end": 112,
+            "text": "FinSight local integration fixture. This text is synthetic and is not market evidence. 승인·인용 저장 연결 검증용 대역 본문입니다."
+          }
+        ],
+        "available_at": null
+      },
+      "publisher": "FinSight 연동 대역",
+      "url": "https://example.invalid/finsight-integration",
+      "sourceType": "original_article"
+    }
+  ],
+  "marketSearchTerms": {
+    "c5d99dc5-0eff-5509-a1a9-1aa4be9750db": [
+      "integration",
+      "연동"
+    ]
+  },
+  "promptSha256": "17716a75ff4d6124a8cac485d4faaa4249cfdc22fab4156d21ba82abd788695f",
+  "packageId": "sha256:e8459b4e574310f599b0ab75d63eaea7fa5353d7123a28fb803e1df8660b47a2"
+}

@@ -1,0 +1,43 @@
+package com.finsight.news;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
+import javax.sql.DataSource;
+import static org.junit.jupiter.api.Assertions.*;
+
+@ActiveProfiles("sample")
+@SpringBootTest(properties = {
+    "spring.datasource.url=jdbc:h2:mem:sample;MODE=MySQL;DB_CLOSE_DELAY=-1",
+    "spring.datasource.driver-class-name=org.h2.Driver", "spring.datasource.username=sa",
+    "spring.datasource.password=", "spring.jpa.hibernate.ddl-auto=create-drop",
+    "auth.jwt.secret=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+})
+class SampleNewsTests {
+    @Autowired JdbcTemplate jdbc;
+    @Autowired DataSource dataSource;
+    @Test void hidingSamplesPreservesTargetsAndNewsCandidateLinks() {
+        int links = jdbc.queryForObject("select count(*) from news_target_candidates", Integer.class);
+        var migration = new ResourceDatabasePopulator(new org.springframework.core.io.FileSystemResource(
+                "docs/migrations/market-targets-hide-samples.sql"));
+        migration.execute(dataSource);
+        migration.execute(dataSource);
+        assertEquals(2, jdbc.queryForObject("select count(*) from market_targets where code in ('SAMPLE_US','SAMPLE_KR')", Integer.class));
+        assertEquals(0, jdbc.queryForObject("select count(*) from market_targets where code in ('SAMPLE_US','SAMPLE_KR') and is_active=true", Integer.class));
+        assertEquals(links, jdbc.queryForObject("select count(*) from news_target_candidates", Integer.class));
+    }
+    @Test void sampleDataLoadsAndCanBeLoadedAgain() {
+        jdbc.update("update market_targets set unit='%' where code in ('SAMPLE_US', 'SAMPLE_KR')");
+        new ResourceDatabasePopulator(new ClassPathResource("sample-news.sql")).execute(dataSource);
+        assertEquals(2, jdbc.queryForObject("select count(*) from market_targets where code in ('SAMPLE_US', 'SAMPLE_KR') and target_type='index' and unit='point'", Integer.class));
+        assertEquals(4, jdbc.queryForObject("select count(*) from news", Integer.class));
+        assertEquals(2, jdbc.queryForObject("select count(*) from news where status='published' and content_type='live'", Integer.class));
+        assertEquals(2, jdbc.queryForObject("select count(*) from source_documents", Integer.class));
+        assertEquals(2, jdbc.queryForObject("select count(*) from source_documents where news_id is not null", Integer.class));
+        assertEquals(2, jdbc.queryForObject("select count(*) from news_facts", Integer.class));
+    }
+}

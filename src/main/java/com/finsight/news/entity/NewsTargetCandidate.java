@@ -13,6 +13,10 @@ public class NewsTargetCandidate {
  @Column(columnDefinition="TEXT") private String rationale;
  @Column(nullable=false) private int sortOrder;
  public NewsTargetCandidate(News news,MarketTarget target,int sortOrder){this.news=news;this.target=target;this.sortOrder=sortOrder;}
+ public NewsTargetCandidate(News news, MarketTarget target, int sortOrder, String rationale) {
+     this(news, target, sortOrder);
+     this.rationale = rationale;
+ }
  @EqualsAndHashCode @NoArgsConstructor
  public static class Key implements Serializable {private UUID news; private UUID target;}
 }

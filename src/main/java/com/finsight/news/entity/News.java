@@ -31,6 +31,19 @@ public class News {
     private Instant curatedAt;
     @Column(nullable = false, updatable = false) private Instant createdAt;
     @Column(nullable = false) private Instant updatedAt;
+    public static News publishLive(String title, String category, String briefing, Instant publishedAt,
+                                   Instant referenceAt, Instant curatedAt) {
+        News news = new News();
+        news.title = title;
+        news.category = category;
+        news.briefing = briefing;
+        news.publishedAt = publishedAt;
+        news.referenceAt = referenceAt;
+        news.curatedAt = curatedAt;
+        news.status = "published";
+        return news;
+    }
+
     @PrePersist void create() { createdAt = Instant.now(); updatedAt = createdAt; }
     @PreUpdate void update() { updatedAt = Instant.now(); }
 }

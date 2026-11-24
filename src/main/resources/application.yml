@@ -33,6 +33,8 @@ auth:
     privacy-version: ${PRIVACY_POLICY_VERSION:test-v1}
 
 finsight:
+  news-admin:
+    user-ids: ${NEWS_ADMIN_USER_IDS:}
   ai:
     enabled: ${AI_FEEDBACK_ENABLED:true}
     prompt-version: ${AI_PROMPT_VERSION:feedback-p0-v1}

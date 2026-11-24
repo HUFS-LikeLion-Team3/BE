@@ -135,6 +135,21 @@ class AiRagFrozenInputServiceTest {
     }
 
     @Test
+    void roundedReplayCutoffReusesOriginalSnapshot() {
+        originals();
+        LearningSession session = sessions.findById(sessionId).orElseThrow();
+        when(session.getReplayReferenceAt()).thenReturn(submitted.plusNanos(156));
+        when(baselines.findBySessionTargetId(targetId)).thenReturn(Optional.empty());
+        when(observations.findAllBySessionTargetIdOrderByHorizonAsc(targetId)).thenReturn(List.of());
+        when(reflections.findAllByLearningSessionIdOrderByCreatedAtAscIdAsc(sessionId)).thenReturn(List.of());
+        FeedbackGenerationInput result = service.buildFinal(sessionId, outcomeCutoff);
+        assertEquals(outcomeCutoff.toString(), result.requestSnapshot().get("inputCutoffAt"));
+        assertEquals(submitted.toString(), snapshots.findByAiFeedbackId(feedbackId)
+                .orElseThrow().getRequestSnapshot().get("inputCutoffAt"));
+        verify(snapshots, never()).save(any());
+    }
+
+    @Test
     void finalPreservesOriginalAndActualOutcomes() {
         originals();
 

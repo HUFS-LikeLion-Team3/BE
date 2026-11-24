@@ -129,9 +129,10 @@ class FeedbackFrozenSubmissionFailureIsolationIntegrationTest {
             String expectedCode
     ) {
         assertEquals(
-                AiFeedback.FeedbackStatus.generating,
+                AiFeedback.FeedbackStatus.failed,
                 feedback.getStatus()
         );
+        assertEquals(expectedCode, feedback.getFailureCode());
 
         AiRagJob job = jobRepository
                 .findById(feedback.getId())
@@ -274,6 +275,26 @@ class FeedbackFrozenSubmissionFailureIsolationIntegrationTest {
                 eq(PACKAGE_ID),
                 isNull()
         );
+    }
+
+    @Test
+    void finalBuilderFailureIsVisibleAsFailedAndCannotDispatch() {
+        UUID sessionId = UUID.randomUUID();
+        UUID reflectionSubmissionId = UUID.randomUUID();
+        configureSession(sessionId);
+        transaction().executeWithoutResult(status -> feedbackRepository.save(
+                AiFeedback.create(sessionId, AiFeedback.FeedbackStage.INITIAL,
+                        1, "feedback:initial:" + sessionId + ":v1", "test-prompt",
+                        "test-policy", SUBMITTED_AT)));
+        when(finalBuilder.resolveCutoff(sessionId, SUBMITTED_AT)).thenReturn(SUBMITTED_AT);
+        when(finalBuilder.build(sessionId, SUBMITTED_AT))
+                .thenThrow(new IllegalStateException("initial_submission_changed"));
+        assertDoesNotThrow(() -> transaction().executeWithoutResult(status ->
+                publisher.publishEvent(new FinalReflectionSubmittedEvent(
+                        sessionId, reflectionSubmissionId, SUBMITTED_AT))));
+        AiFeedback feedback = findFeedback(sessionId, AiFeedback.FeedbackStage.FINAL);
+        assertQuarantined(feedback, "final_input_freeze_failed");
+        verifyNoInteractions(contractMapper);
     }
 
     @Test

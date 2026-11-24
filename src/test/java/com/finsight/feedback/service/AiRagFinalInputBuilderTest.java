@@ -117,6 +117,28 @@ class AiRagFinalInputBuilderTest {
                 .thenReturn(List.of());
     }
 
+    @ParameterizedTest
+    @CsvSource({"false", "true"})
+    void roundedCutoffAllowsLiveAndReplayWithoutChangingSnapshot(boolean replay) {
+        OffsetDateTime raw = OffsetDateTime.parse("2026-11-23T18:43:32.589211844+09:00");
+        OffsetDateTime stored = OffsetDateTime.parse("2026-11-23T09:43:32.589212Z");
+        Map<String, Object> original = initialSnapshot();
+        original.put("inputCutoffAt", raw.toString());
+        savedInitialExists(original);
+        LearningSession session = mock(LearningSession.class);
+        if (replay) {
+            when(session.getReplayReferenceAt()).thenReturn(stored);
+        } else {
+            when(session.getSubmittedAt()).thenReturn(stored);
+        }
+        when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        noResultsYet();
+        FeedbackGenerationInput result = builder.build(sessionId, outcomeCutoffAt);
+        assertEquals(raw.toString(), result.requestSnapshot().get("inputCutoffAt"));
+        assertEquals(raw.toString(), original.get("inputCutoffAt"));
+        assertEquals(original.get("prediction"), result.requestSnapshot().get("prediction"));
+    }
+
     @Test
     void finalReusesFrozenNewsPredictionsAndOriginalSubmissionTime() {
         Map<String, Object> original = initialSnapshot();

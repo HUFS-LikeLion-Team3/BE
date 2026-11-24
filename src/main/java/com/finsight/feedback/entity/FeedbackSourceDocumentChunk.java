@@ -18,6 +18,14 @@ import java.util.UUID;
 @NoArgsConstructor
 public class FeedbackSourceDocumentChunk {
 
+    public FeedbackSourceDocumentChunk(UUID sourceDocumentId, String content, OffsetDateTime createdAt) {
+        this.id = UUID.randomUUID();
+        this.sourceDocumentId = sourceDocumentId;
+        this.content = content;
+        this.chunkOrder = 1;
+        this.createdAt = createdAt;
+    }
+
     @Id
     private UUID id;
 

@@ -92,6 +92,8 @@ DB_USERNAME=root
 DB_PASSWORD=본인 MySQL 비밀번호
 ```
 
+뉴스 등록 화면을 사용하려면 백엔드 환경 변수 `NEWS_ADMIN_USER_IDS`에 운영자 계정의 FinSight 사용자 UUID를 쉼표로 구분해 설정합니다. 비워 두면 뉴스 등록 권한을 가진 계정이 없습니다. 허용된 운영자는 로그인 후 FE의 `/admin/news`에서 기사와 관측 지표를 등록할 수 있습니다.
+
 MySQL 계정명이 `root`가 아닌 경우 `DB_USERNAME`을 본인 계정명으로 변경합니다.
 
 `application.yml`에서는 다음 환경 변수를 사용합니다.

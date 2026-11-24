@@ -22,6 +22,26 @@ import java.util.UUID;
 @org.hibernate.annotations.Check(constraints = "source_type in ('original_article','official_statistic','government_release','central_bank_release','research_report') and selection_tier in ('primary_official','original_article','trusted_research')")
 public class FeedbackSourceDocument {
 
+    public static FeedbackSourceDocument primaryNewsSource(
+            UUID id, com.finsight.news.entity.News news, String sourceType, String selectionTier,
+            String publisher, String url, OffsetDateTime publishedAt, String contentHash,
+            java.time.Instant retrievedAt) {
+        FeedbackSourceDocument source = new FeedbackSourceDocument();
+        source.id = id;
+        source.news = news;
+        source.sourceType = sourceType;
+        source.selectionTier = selectionTier;
+        source.primary = true;
+        source.publisher = publisher;
+        source.title = news.getTitle();
+        source.url = url;
+        source.publishedAt = publishedAt;
+        source.availableAt = publishedAt;
+        source.contentHash = contentHash;
+        source.retrievedAt = retrievedAt;
+        return source;
+    }
+
     @Id
     private UUID id;
 

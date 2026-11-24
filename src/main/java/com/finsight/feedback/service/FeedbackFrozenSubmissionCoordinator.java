@@ -421,9 +421,11 @@ public class FeedbackFrozenSubmissionCoordinator {
             job.uncertain(failureCode);
         }
 
-        if (feedback.getStatus()
-                == AiFeedback.FeedbackStatus.pending) {
-            feedback.markGenerating();
+        // A known preparation failure cannot make progress automatically.
+        // Only quarantine jobs with no accepted request; never overwrite delivery.
+        if (job.getJobId() == null && job.getRequestJson() == null
+                && "reconciliation_required".equals(job.getState())) {
+            feedback.markFailed(failureCode);
         }
 
         log.error(

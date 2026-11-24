@@ -186,8 +186,7 @@ public class AiRagFinalInputBuilder {
         OffsetDateTime sessionCutoffAt =
                 LearningSession.outcomeReferenceAt(session);
 
-        if (sessionCutoffAt == null
-                || !sessionCutoffAt.isEqual(evidenceCutoffAt)) {
+        if (!SubmissionTimePrecision.matches(sessionCutoffAt, evidenceCutoffAt)) {
             throw new IllegalStateException(
                     "initial_submission_changed"
             );

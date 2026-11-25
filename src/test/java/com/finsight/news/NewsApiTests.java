@@ -245,14 +245,14 @@ class NewsApiTests {
     }
     @Test void schemaMatchesErdColumnsWithoutInventedTables() {
         Map<String, Set<String>> expected = Map.of(
-            "NEWS", Set.of("ID","CONTENT_TYPE","REPLAY_STATUS","TITLE","CATEGORY","BRIEFING",
+            "NEWS", Set.of("ID","CONTENT_TYPE","REPLAY_STATUS","TITLE","CATEGORY","BRIEFING","BACKGROUND_CONTEXT",
                     "PUBLISHED_AT","REFERENCE_AT","CURATED_AT","STATUS","CREATED_AT","UPDATED_AT"),
             "USER_INTERESTS", Set.of("ID","USER_ID","INTEREST_TYPE","INTEREST_KEY","CREATED_AT"),
             "MARKET_TARGETS", Set.of("ID","CODE","DISPLAY_NAME","MARKET_CATEGORY","TARGET_TYPE",
                     "DIRECTION_LABELS","UNIT","CALENDAR_CODE","TIMEZONE","DATA_SYMBOL","IS_ACTIVE","CREATED_AT","UPDATED_AT"),
             "NEWS_TARGET_CANDIDATES", Set.of("NEWS_ID","MARKET_TARGET_ID","RATIONALE","SORT_ORDER"),
             "SOURCE_DOCUMENTS", Set.of("ID","NEWS_ID","SOURCE_TYPE","SELECTION_TIER","PUBLISHER",
-                    "TITLE","URL","PUBLISHED_AT","AVAILABLE_AT","IS_PRIMARY","CONTENT_HASH","CONTENT_STORAGE_URI",
+                    "TITLE","URL","PUBLIC_SUMMARY","PUBLISHED_AT","AVAILABLE_AT","IS_PRIMARY","CONTENT_HASH","CONTENT_STORAGE_URI",
                     "RETRIEVED_AT","CREATED_AT","UPDATED_AT"),
             "NEWS_FACTS", Set.of("ID","NEWS_ID","SOURCE_DOCUMENT_ID","LABEL","VALUE_TEXT","UNIT","AS_OF_AT","SORT_ORDER"));
         expected.forEach((table, columns) -> assertEquals(columns, new HashSet<>(jdbc.queryForList(

@@ -16,17 +16,17 @@ public final class NewsResponses {
     }
     public record ListResponse(List<Item> content, int page, int size, boolean hasNext) {}
     public record Detail(UUID id, String contentType, String replayStatus, String title, String category,
-                         String briefing, Instant publishedAt, Instant referenceAt, Instant curatedAt) {
+                         String briefing, Instant publishedAt, Instant referenceAt, Instant curatedAt, String backgroundContext) {
         public static Detail from(News n) {
             return new Detail(n.getId(), n.getContentType(), n.getReplayStatus(), n.getTitle(),
-                    n.getCategory(), n.getBriefing(), n.getPublishedAt(), n.getReferenceAt(), n.getCuratedAt());
+                    n.getCategory(), n.getBriefing(), n.getPublishedAt(), n.getReferenceAt(), n.getCuratedAt(), n.getBackgroundContext());
         }
     }
     public record Source(UUID id, String sourceType, String selectionTier, String publisher, String title,
-                         String url, OffsetDateTime publishedAt, boolean isPrimary) {
+                         String url, OffsetDateTime publishedAt, boolean isPrimary, String publicSummary) {
         public static Source from(FeedbackSourceDocument d) {
             return new Source(d.getId(), d.getSourceType(), d.getSelectionTier(), d.getPublisher(),
-                    d.getTitle(), d.getUrl(), d.getPublishedAt(), d.isPrimary());
+                    d.getTitle(), d.getUrl(), d.getPublishedAt(), d.isPrimary(), d.getPublicSummary());
         }
     }
     public record Sources(List<Source> sources) {}

@@ -20,6 +20,7 @@ public class News {
     @Column(nullable = false) private String title;
     @Column(nullable = false) private String category;
     @Column(nullable = false, columnDefinition = "TEXT") private String briefing;
+    @Column(columnDefinition = "TEXT") private String backgroundContext;
     @org.hibernate.annotations.ColumnDefault("'live'")
     @Column(nullable = false) private String contentType = "live";
     @org.hibernate.annotations.ColumnDefault("'not_eligible'")
@@ -31,12 +32,13 @@ public class News {
     private Instant curatedAt;
     @Column(nullable = false, updatable = false) private Instant createdAt;
     @Column(nullable = false) private Instant updatedAt;
-    public static News publishLive(String title, String category, String briefing, Instant publishedAt,
+    public static News publishLive(String title, String category, String briefing, String backgroundContext, Instant publishedAt,
                                    Instant referenceAt, Instant curatedAt) {
         News news = new News();
         news.title = title;
         news.category = category;
         news.briefing = briefing;
+        news.backgroundContext = backgroundContext;
         news.publishedAt = publishedAt;
         news.referenceAt = referenceAt;
         news.curatedAt = curatedAt;

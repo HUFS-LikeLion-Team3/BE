@@ -35,7 +35,8 @@ class RealMarketTargetSeedTests {
         assertEquals("etf", jdbc.queryForObject("select target_type from market_targets where code='XLF'", String.class));
         assertEquals("XNAS", jdbc.queryForObject("select calendar_code from market_targets where code='SOXX'", String.class));
         assertEquals("ARCX", jdbc.queryForObject("select calendar_code from market_targets where code='UUP'", String.class));
-        assertEquals("HG1", jdbc.queryForObject("select data_symbol from market_targets where code='COPPER'", String.class));
+        assertEquals("CPER", jdbc.queryForObject("select data_symbol from market_targets where code='COPPER'", String.class));
+        assertEquals("ARCX", jdbc.queryForObject("select calendar_code from market_targets where code='COPPER'", String.class));
         assertEquals("802Y001/0089000", jdbc.queryForObject("select data_symbol from market_targets where code='KOSDAQ'", String.class));
         assertEquals("817Y002/010200000", jdbc.queryForObject("select data_symbol from market_targets where code='KR3Y'", String.class));
         assertEquals("BC_10YEAR", jdbc.queryForObject("select data_symbol from market_targets where code='US10Y'", String.class));

@@ -60,5 +60,5 @@ SELECT X'497560f69c59496190b431c9f2740ff4','UUP','달러 인덱스 추종 ETF (U
 WHERE NOT EXISTS (SELECT 1 FROM market_targets WHERE code='UUP' OR id=X'497560f69c59496190b431c9f2740ff4');
 
 INSERT INTO market_targets (id,code,display_name,market_category,target_type,direction_labels,unit,calendar_code,timezone,data_symbol,is_active,created_at,updated_at)
-SELECT X'4983f57f0c694e4b8d3fab08912f7b4b','COPPER','구리 현물 (제공처 일일 마감)','commodity','commodity','{"up":"상승","down":"하락","neutral":"큰 방향성 없음"}','USD/lb','TDCU','Australia/Sydney','HG1',true,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+SELECT X'4983f57f0c694e4b8d3fab08912f7b4b','COPPER','구리 추종 ETF (CPER)','commodity','etf','{"up":"상승","down":"하락","neutral":"큰 방향성 없음"}','USD','ARCX','America/New_York','CPER',true,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
 WHERE NOT EXISTS (SELECT 1 FROM market_targets WHERE code='COPPER' OR id=X'4983f57f0c694e4b8d3fab08912f7b4b');

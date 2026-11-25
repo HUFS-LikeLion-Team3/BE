@@ -26,7 +26,7 @@ public class OutcomeScheduleService {
     private static final Set<Integer> HORIZONS = Set.of(1, 5, 20);
 
     private static final Set<String> DAILY_MARKET_CODES =
-            Set.of("USTY", "TDFX", "TDGD", "TDWT");
+            Set.of("USTY", "TDFX", "TDGD", "TDWT", "ECOS");
 
     private final MarketDataService marketDataService;
 

@@ -4,7 +4,7 @@ SELECT X'77777777777747778777777777777777','AAPL','애플','us_equity','stock','
 WHERE NOT EXISTS (SELECT 1 FROM market_targets WHERE code='AAPL' OR id=X'77777777777747778777777777777777');
 
 INSERT INTO market_targets (id,code,display_name,market_category,target_type,direction_labels,unit,calendar_code,timezone,data_symbol,is_active,created_at,updated_at)
-SELECT X'88888888888848888888888888888888','KOSPI','코스피 지수','korea_equity','index','{"up":"상승","down":"하락","neutral":"큰 방향성 없음"}','point','XKRX','Asia/Seoul','KS11',true,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+SELECT X'88888888888848888888888888888888','KOSPI','코스피 지수','korea_equity','index','{"up":"상승","down":"하락","neutral":"큰 방향성 없음"}','point','ECOS','Asia/Seoul','802Y001/0001000',true,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
 WHERE NOT EXISTS (SELECT 1 FROM market_targets WHERE code='KOSPI' OR id=X'88888888888848888888888888888888');
 
 INSERT INTO market_targets (id,code,display_name,market_category,target_type,direction_labels,unit,calendar_code,timezone,data_symbol,is_active,created_at,updated_at)
@@ -22,3 +22,11 @@ WHERE NOT EXISTS (SELECT 1 FROM market_targets WHERE code='GOLD' OR id=X'bbbbbbb
 INSERT INTO market_targets (id,code,display_name,market_category,target_type,direction_labels,unit,calendar_code,timezone,data_symbol,is_active,created_at,updated_at)
 SELECT X'cccccccccccc4ccc8ccccccccccccccc','WTI','WTI 원유 현물 (EIA 일일 기준)','commodity','commodity','{"up":"상승","down":"하락","neutral":"큰 방향성 없음"}','USD/barrel','TDWT','Australia/Sydney','WTI/USD',true,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
 WHERE NOT EXISTS (SELECT 1 FROM market_targets WHERE code='WTI' OR id=X'cccccccccccc4ccc8ccccccccccccccc');
+
+INSERT INTO market_targets (id,code,display_name,market_category,target_type,direction_labels,unit,calendar_code,timezone,data_symbol,is_active,created_at,updated_at)
+SELECT X'dddddddddddd4ddd8ddddddddddddddd','KOSDAQ','코스닥 지수','korea_equity','index','{"up":"상승","down":"하락","neutral":"큰 방향성 없음"}','point','ECOS','Asia/Seoul','802Y001/0089000',true,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+WHERE NOT EXISTS (SELECT 1 FROM market_targets WHERE code='KOSDAQ' OR id=X'dddddddddddd4ddd8ddddddddddddddd');
+
+INSERT INTO market_targets (id,code,display_name,market_category,target_type,direction_labels,unit,calendar_code,timezone,data_symbol,is_active,created_at,updated_at)
+SELECT X'eeeeeeeeeeee4eee8eeeeeeeeeeeeeee','KR3Y','한국 3년물 국고채 금리 (한국은행 일일 기준)','rate','yield','{"up":"금리 상승","down":"금리 하락","neutral":"큰 방향성 없음"}','%','ECOS','Asia/Seoul','817Y002/010200000',true,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+WHERE NOT EXISTS (SELECT 1 FROM market_targets WHERE code='KR3Y' OR id=X'eeeeeeeeeeee4eee8eeeeeeeeeeeeeee');

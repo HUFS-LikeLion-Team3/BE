@@ -3,6 +3,9 @@ market:
     twelve-data:
       api-key: ${TWELVE_DATA_API_KEY:}
       base-url: https://api.twelvedata.com
+    ecos:
+      api-key: ${ECOS_API_KEY:}
+      base-url: https://ecos.bok.or.kr
     confirmation-delay: PT15M
     max-lookback-days: 14
     us-equity-calendar-mode: official

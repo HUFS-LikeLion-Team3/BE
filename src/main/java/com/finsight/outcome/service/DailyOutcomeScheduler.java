@@ -46,7 +46,7 @@ import java.util.UUID;
 public class DailyOutcomeScheduler {
 
     private static final Set<String> DAILY_CODES =
-            Set.of("USTY", "TDFX", "TDGD", "TDWT");
+            Set.of("USTY", "TDFX", "TDGD", "TDWT", "ECOS");
 
     private static final List<Integer> HORIZONS =
             List.of(1, 5, 20);
@@ -410,7 +410,7 @@ public class DailyOutcomeScheduler {
 
             int delay = Math.max(
                     0,
-                    "USTY".equals(market.getCalendarCode())
+                    weekdayMarket(market)
                             ? weekdaysBetween(expected, actual)
                             : (int) java.time.temporal.ChronoUnit.DAYS.between(expected, actual)
             );
@@ -537,7 +537,7 @@ public class DailyOutcomeScheduler {
                 .atZoneSameInstant(ZoneId.of(market.getTimezone()))
                 .toLocalDate();
 
-        while (("USTY".equals(market.getCalendarCode()) && !isWeekday(date))
+        while ((weekdayMarket(market) && !isWeekday(date))
                 || !referenceAt(market, date).isAfter(submittedAt)) {
             date = date.plusDays(1);
         }
@@ -546,7 +546,7 @@ public class DailyOutcomeScheduler {
     }
 
     LocalDate estimateDate(MarketTarget market, LocalDate start, int count) {
-        return "USTY".equals(market.getCalendarCode()) ? addWeekdays(start, count) : start.plusDays(count);
+        return weekdayMarket(market) ? addWeekdays(start, count) : start.plusDays(count);
     }
 
     private OffsetDateTime referenceAt(
@@ -555,7 +555,7 @@ public class DailyOutcomeScheduler {
     ) {
         ZoneId zone = ZoneId.of(market.getTimezone());
 
-        if ("USTY".equals(market.getCalendarCode())) {
+        if (weekdayMarket(market)) {
             return date.atTime(15, 30)
                     .atZone(zone)
                     .toOffsetDateTime();
@@ -599,6 +599,11 @@ public class DailyOutcomeScheduler {
         }
 
         return count;
+    }
+
+    /** Official daily series published only on weekday trading days (no weekend values). */
+    private static boolean weekdayMarket(MarketTarget market) {
+        return "USTY".equals(market.getCalendarCode()) || "ECOS".equals(market.getCalendarCode());
     }
 
     private static boolean isWeekday(LocalDate date) {

@@ -37,6 +37,16 @@ market-data 프로필은 AAPL, KOSPI, US10Y, USDKRW, GOLD, WTI의 실제 대상 
 환율은 `환율 상승(원화 약세)`/`환율 하락(원화 강세)`, 금리는 `금리 상승`/`금리 하락`이다.
 AI 자료 패키지의 marketSearchTerms에 없는 대상은 AI 피드백 요청이 거절되므로 패키지 갱신·재등록과 함께 실행한다.
 
+## 한국 시장 (ECOS, 2026-11-25)
+
+KOSPI·KOSDAQ·한국 3년물은 `EcosClient`가 한국은행 ECOS `StatisticSearch` API의 일별 통계를 조회한다.
+`dataSymbol`은 `통계표코드/항목코드`, `calendarCode`는 내부 분류 코드 `ECOS`(거래소 MIC 아님)이다.
+서버 환경변수 `ECOS_API_KEY`가 필요하며(ECOS 회원가입 후 무료 발급), 없으면 unavailable이다.
+ECOS는 키를 URL 경로로 받으므로 요청 URL을 로그로 남기지 않는다.
+실제 게시된 평일 값만 사용하고 휴장일 값을 만들지 않는다. 기준 시각은 KRX 정규장 종료인 15:30 KST다.
+결과 수집은 US10Y와 같이 평일 기준으로 예정일을 계산하고 실제 게시 관측을 센다.
+등록은 [한국 시장 추가 SQL](migrations/20261125_market_targets_korea_ecos.sql)을 사용한다.
+
 ## 설정
 
 Twelve Data API 키를 서버 환경변수 `TWELVE_DATA_API_KEY`에 설정한다.
@@ -81,7 +91,9 @@ market-data 프로필에서 AAPL이 없으면 `77777777-7777-4777-8777-777777777
 | 코드 | 조회 심볼 / 캘린더 | 단위 | 가격 기준 |
 | --- | --- | --- | --- |
 | AAPL | AAPL / XNAS | USD | 미국 주식 정규 종가 |
-| KOSPI | KS11 / XKRX | point | 코스피 정규 종가 |
+| KOSPI | 802Y001/0001000 / ECOS | point | 한국은행 ECOS 주식시장(일) KOSPI지수 |
+| KOSDAQ | 802Y001/0089000 / ECOS | point | 한국은행 ECOS 주식시장(일) KOSDAQ지수 |
+| KR3Y | 817Y002/010200000 / ECOS | % | 한국은행 ECOS 시장금리(일별) 국고채(3년) |
 | US10Y | BC_10YEAR / USTY | % | 미국 재무부 공식 10년 constant-maturity par yield |
 | USDKRW | USD/KRW / TDFX | KRW | 1 USD당 KRW, 제공처 일일 마감 |
 | GOLD | XAU/USD / TDGD | USD/troy_oz | 금 현물 트로이온스당 USD, 제공처 일일 마감 |

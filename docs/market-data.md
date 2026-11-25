@@ -59,9 +59,9 @@ S&P 500(`SP500`)·NASDAQ 100(`NASDAQ100`) 일별 종가를 조회한다. `calend
 
 공개 무료 지수 시세가 없는 Russell 2000·필라델피아 반도체지수·달러 인덱스는 사용자 결정에 따라 추종 ETF로 제공한다.
 IWM·UUP는 Twelve Data NYSE Arca(`ARCX`), SOXX는 Nasdaq(`XNAS`, 응답 MIC `XNMS` 허용) 정규 종가다. 표시명에 ETF임을 밝힌다.
-구리는 Twelve Data 구리 현물 `HG1` 일일 마감(`TDCU`, USD/lb)이며 금과 같은 일일 경로를 쓴다.
+구리는 Twelve Data 현물 `HG1`이 Grow 이상 요금제에서만 조회돼(2026-11-25 운영 키로 404 확인) 추종 ETF CPER(`ARCX`)을 쓴다. `TDCU`(HG1) 경로는 요금제 변경 시를 위해 남겨 둔다.
 등록은 [ETF·구리 SQL](migrations/20261125_market_targets_etf_proxies_copper.sql)을 사용한다.
-Twelve Data 요금제에서 ETF·HG1 조회 가능 여부와 HG1 단위는 실제 키로 확인해야 한다.
+2026-11-25 운영 키로 USD/KRW·XAU/USD·XLE·XLF·IWM·SOXX(XNMS)·UUP 일봉 조회를 확인했다.
 
 ## 설정
 

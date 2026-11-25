@@ -34,7 +34,7 @@ import java.util.UUID;
 public class OutcomeBaselineCoordinator {
 
     private static final Set<String> DAILY_MARKET_CODES =
-            Set.of("USTY", "TDFX", "TDGD", "TDWT", "ECOS", "FRED");
+            Set.of("USTY", "TDFX", "TDGD", "TDWT", "ECOS", "FRED", "TDCU");
 
     private final LearningSessionRepository sessionRepository;
     private final SessionTargetRepository sessionTargetRepository;

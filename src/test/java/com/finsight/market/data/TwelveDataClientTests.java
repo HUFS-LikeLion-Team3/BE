@@ -47,6 +47,28 @@ class TwelveDataClientTests {
         server.verify();
     }
 
+    @Test void acceptsNasdaqGlobalMarketSegmentForEtfOnNasdaqCalendar() {
+        server.expect(requestTo("https://api.twelvedata.com/time_series?symbol=SOXX&exchange=NASDAQ&interval=1day&outputsize=1&order=desc&adjust=none&prepost=false&dp=6&start_date=2026-10-09&end_date=2026-10-10"))
+                .andRespond(withSuccess(eod("2026-10-09", "250.5").replace("AAPL", "SOXX").replace("XNAS", "XNMS"), MediaType.APPLICATION_JSON));
+        assertEquals(new EndOfDay(date, new BigDecimal("250.5")), client.endOfDay("SOXX", "XNAS", date));
+        server.verify();
+    }
+
+    @Test void copperSpotUsesDailyCommodityPathWithPinnedSymbolAndUnit() {
+        var copper = DailyMarketDataTests.target("TDCU", "HG1", "Australia/Sydney", "USD/lb", "commodity");
+        assertTrue(client.supports(copper));
+        server.expect(requestTo(org.hamcrest.Matchers.startsWith("https://api.twelvedata.com/time_series?symbol=HG1&interval=1day")))
+                .andRespond(withSuccess("""
+                    {"meta":{"symbol":"HG1","interval":"1day"},"values":[
+                      {"datetime":"2026-10-09","close":"4.95"},{"datetime":"2026-10-08","close":"4.90"}]}
+                    """, MediaType.APPLICATION_JSON));
+        var values = client.observations(copper, date, 3);
+        assertEquals(2, values.size());
+        server.verify();
+        var wrongUnit = DailyMarketDataTests.target("TDCU", "HG1", "Australia/Sydney", "USD/troy_oz", "commodity");
+        assertThrows(DataException.class, () -> client.observations(wrongUnit, date, 3));
+    }
+
     @Test void extractsEarlyRegularCloseAndExcludesPreAndPostMarket() {
         server.expect(requestTo("https://api.twelvedata.com/exchange_schedule?mic_code=XNAS&date=2026-10-09"))
                 .andExpect(header("Authorization", "apikey test-key"))

@@ -51,7 +51,7 @@ public class OutcomeObservationCollectionScheduler {
             Set.of(1, 5, 20);
 
     private static final Set<String> DAILY_MARKET_CODES =
-            Set.of("USTY", "TDFX", "TDGD", "TDWT", "ECOS", "FRED");
+            Set.of("USTY", "TDFX", "TDGD", "TDWT", "ECOS", "FRED", "TDCU");
 
     private final LearningSessionRepository sessionRepository;
     private final SessionTargetRepository sessionTargetRepository;

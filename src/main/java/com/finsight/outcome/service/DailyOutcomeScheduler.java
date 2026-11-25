@@ -46,7 +46,7 @@ import java.util.UUID;
 public class DailyOutcomeScheduler {
 
     private static final Set<String> DAILY_CODES =
-            Set.of("USTY", "TDFX", "TDGD", "TDWT", "ECOS", "FRED");
+            Set.of("USTY", "TDFX", "TDGD", "TDWT", "ECOS", "FRED", "TDCU");
 
     private static final List<Integer> HORIZONS =
             List.of(1, 5, 20);

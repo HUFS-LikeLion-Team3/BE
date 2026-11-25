@@ -25,12 +25,21 @@ public final class FeedbackItemRules {
     public static final String V3_2_PROMPT_VERSION =
             "news-market-judgment-v3.2";
 
+    /** AI v3.3·v3.3.1 keep the v3.2 item types; only the writing guidance changed. */
+    public static final String V3_3_PROMPT_VERSION =
+            "news-market-analysis-v3.3";
+
+    public static final String V3_3_1_PROMPT_VERSION =
+            "news-market-analysis-v3.3.1";
+
     private static final Set<String> V2_ITEM_CONTRACT_VERSIONS =
             Set.of(
                     V2_PROMPT_VERSION,
                     V3_PROMPT_VERSION,
                     V3_1_PROMPT_VERSION,
-                    V3_2_PROMPT_VERSION
+                    V3_2_PROMPT_VERSION,
+                    V3_3_PROMPT_VERSION,
+                    V3_3_1_PROMPT_VERSION
             );
 
     private static final List<String> INITIAL_V2_SESSION =

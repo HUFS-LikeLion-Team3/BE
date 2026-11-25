@@ -18,7 +18,9 @@ class FeedbackItemRulesVersionTest {
                     "news-market-explanation-v2.1",
                     "news-market-judgment-v3",
                     "news-market-judgment-v3.1",
-                    "news-market-judgment-v3.2"
+                    "news-market-judgment-v3.2",
+                    "news-market-analysis-v3.3",
+                    "news-market-analysis-v3.3.1"
             );
 
     @Test

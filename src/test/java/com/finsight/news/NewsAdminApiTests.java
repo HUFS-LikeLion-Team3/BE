@@ -1,6 +1,7 @@
 package com.finsight.news;
 
 import com.finsight.auth.entity.User;
+import com.finsight.auth.repository.UserRepository;
 import com.finsight.auth.service.TokenService;
 import com.finsight.market.entity.MarketTarget;
 import com.finsight.market.repository.MarketTargetRepository;
@@ -23,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -38,6 +40,7 @@ class NewsAdminApiTests {
     @Autowired TokenService tokens;
     @Autowired MarketTargetRepository markets;
     @Autowired NewsRepository news;
+    @Autowired UserRepository users;
     MockMvc mvc;
 
     @BeforeEach
@@ -151,6 +154,55 @@ class NewsAdminApiTests {
                 .contentType(MediaType.APPLICATION_JSON).content(body(UUID.randomUUID(), UUID.randomUUID(), "잘못된 지표")))
                 .andExpect(status().isBadRequest());
         assertEquals(before, news.count());
+    }
+
+    @Test
+    void adminsCanListAndChangeStatusWithoutUnpublishingLearnedNews() throws Exception {
+        String admin = bearer(UUID.fromString("11111111-1111-4111-8111-111111111111"));
+        String reader = bearer(UUID.randomUUID());
+        String created = mvc.perform(post("/api/v1/admin/news").header("Authorization", admin)
+                .contentType(MediaType.APPLICATION_JSON).content(body(UUID.randomUUID(), market(), "상태 확인 기사")))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String id = JsonMapper.builder().build().readTree(created).path("id").asString();
+        String details = "/api/v1/news/" + id;
+        String statusPath = "/api/v1/admin/news/" + id + "/status";
+        String archive = """
+                {"expectedStatus":"published","status":"archived"}
+                """;
+
+        mvc.perform(get("/api/v1/admin/news")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/admin/news").header("Authorization", reader)).andExpect(status().isForbidden());
+        mvc.perform(put(statusPath).header("Authorization", reader)
+                .contentType(MediaType.APPLICATION_JSON).content(archive)).andExpect(status().isForbidden());
+
+        mvc.perform(put(statusPath).header("Authorization", admin)
+                .contentType(MediaType.APPLICATION_JSON).content(archive))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("archived"));
+        mvc.perform(put(statusPath).header("Authorization", admin)
+                .contentType(MediaType.APPLICATION_JSON).content(archive)).andExpect(status().isOk());
+        mvc.perform(get(details).header("Authorization", reader)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/admin/news?status=archived").header("Authorization", admin))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.content[0].id").value(id))
+                .andExpect(jsonPath("$.page").value(0));
+
+        mvc.perform(put(statusPath).header("Authorization", admin).contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"expectedStatus":"draft","status":"published"}
+                        """)).andExpect(status().isConflict());
+        mvc.perform(put(statusPath).header("Authorization", admin).contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"expectedStatus":"archived","status":"published"}
+                        """)).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("published"));
+        mvc.perform(get(details).header("Authorization", reader)).andExpect(status().isOk());
+
+        User learner = users.saveAndFlush(new User("kakao", UUID.randomUUID().toString(), "Learner"));
+        mvc.perform(post("/api/v1/learning-sessions").header("Authorization", "Bearer " + tokens.issue(learner))
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                        {"newsId":"%s","sessionType":"live"}
+                        """.formatted(id))).andExpect(status().isCreated());
+        mvc.perform(put(statusPath).header("Authorization", admin)
+                .contentType(MediaType.APPLICATION_JSON).content(archive)).andExpect(status().isConflict());
+        mvc.perform(get(details).header("Authorization", reader)).andExpect(status().isOk());
     }
 
     private String bearer(UUID userId) {

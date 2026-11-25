@@ -46,6 +46,14 @@ public class News {
         return news;
     }
 
+    public enum Status {
+        draft, published, archived
+    }
+
+    public void changeStatus(Status nextStatus) {
+        this.status = nextStatus.name();
+    }
+
     @PrePersist void create() { createdAt = Instant.now(); updatedAt = createdAt; }
     @PreUpdate void update() { updatedAt = Instant.now(); }
 }

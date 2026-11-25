@@ -45,6 +45,8 @@ public interface LearningSessionRepository
             Pageable pageable
     );
 
+    boolean existsByNewsId(UUID newsId);
+
     // 시장 결과 수집이 필요한 세션 조회
     Page<LearningSession> findAllByStatusIn(
             Collection<LearningSession.LearningStatus> statuses,

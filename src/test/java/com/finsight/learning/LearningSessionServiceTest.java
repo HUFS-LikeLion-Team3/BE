@@ -54,7 +54,7 @@ class LearningSessionServiceTest {
     private News publishedLiveNews() {
         News item = mock(News.class);
         when(item.getContentType()).thenReturn("live");
-        when(news.findByIdAndStatus(newsId, "published")).thenReturn(Optional.of(item));
+        when(news.findPublishedForSessionCreation(newsId)).thenReturn(Optional.of(item));
         return item;
     }
 
@@ -74,7 +74,7 @@ class LearningSessionServiceTest {
         InOrder calls = inOrder(users, sessions, news);
         calls.verify(users).findByIdForUpdate(owner);
         calls.verify(sessions).findByUserIdAndNewsId(owner, newsId);
-        calls.verify(news).findByIdAndStatus(newsId, "published");
+        calls.verify(news).findPublishedForSessionCreation(newsId);
         calls.verify(sessions).saveAndFlush(any(LearningSession.class));
     }
 
@@ -124,7 +124,7 @@ class LearningSessionServiceTest {
         News item = mock(News.class);
         when(item.getContentType()).thenReturn("replay");
         when(item.getReplayStatus()).thenReturn("eligible");
-        when(news.findByIdAndStatus(newsId, "published")).thenReturn(Optional.of(item));
+        when(news.findPublishedForSessionCreation(newsId)).thenReturn(Optional.of(item));
         when(sessions.saveAndFlush(any(LearningSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         var result = service.createOrGet(owner, newsId, "replay");
@@ -170,7 +170,7 @@ class LearningSessionServiceTest {
     void noPublishedNewsReturns404AndDoesNotInsert() {
         authenticatedUser();
         when(sessions.findByUserIdAndNewsId(owner, newsId)).thenReturn(Optional.empty());
-        when(news.findByIdAndStatus(newsId, "published")).thenReturn(Optional.empty());
+        when(news.findPublishedForSessionCreation(newsId)).thenReturn(Optional.empty());
 
         ApiException error = assertThrows(ApiException.class,
                 () -> service.createOrGet(owner, newsId, "live"));
@@ -184,7 +184,7 @@ class LearningSessionServiceTest {
         when(sessions.findByUserIdAndNewsId(owner, newsId)).thenReturn(Optional.empty());
         News replayNews = mock(News.class);
         when(replayNews.getContentType()).thenReturn("replay");
-        when(news.findByIdAndStatus(newsId, "published")).thenReturn(Optional.of(replayNews));
+        when(news.findPublishedForSessionCreation(newsId)).thenReturn(Optional.of(replayNews));
 
         ApiException error = assertThrows(ApiException.class,
                 () -> service.createOrGet(owner, newsId, "live"));

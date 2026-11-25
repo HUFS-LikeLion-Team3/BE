@@ -47,6 +47,22 @@ ECOS는 키를 URL 경로로 받으므로 요청 URL을 로그로 남기지 않�
 결과 수집은 US10Y와 같이 평일 기준으로 예정일을 계산하고 실제 게시 관측을 센다.
 등록은 [한국 시장 추가 SQL](migrations/20261125_market_targets_korea_ecos.sql)을 사용한다.
 
+## 미국 지수·섹터 ETF (2026-11-25)
+
+Twelve Data 공개 목록에는 SPX·NDX 지수가 없어 지수는 `FredClient`가 FRED 공개 CSV(`fredgraph.csv`, 키 불필요)에서
+S&P 500(`SP500`)·NASDAQ 100(`NASDAQ100`) 일별 종가를 조회한다. `calendarCode`는 내부 분류 코드 `FRED`이며
+빈 값(휴장일)은 건너뛰고, 기준 시각은 뉴욕 16:00이다. FRED는 빈 기간을 요청하면 전체 시리즈를 주므로 요청 기간만 남긴다.
+섹터 ETF XLE·XLF는 Twelve Data의 NYSE Arca(`ARCX`) 종가를 쓰며, 2026 공식 NYSE 일정을 ARCX에도 적용한다.
+등록은 [미국 지수·ETF SQL](migrations/20261125_market_targets_us_fred_etf.sql)을 사용하며, 기존 NASDAQ100(NDX/XNAS)은 FRED로 전환된다.
+
+## 지수 대체 ETF·구리 (2026-11-25)
+
+공개 무료 지수 시세가 없는 Russell 2000·필라델피아 반도체지수·달러 인덱스는 사용자 결정에 따라 추종 ETF로 제공한다.
+IWM·UUP는 Twelve Data NYSE Arca(`ARCX`), SOXX는 Nasdaq(`XNAS`, 응답 MIC `XNMS` 허용) 정규 종가다. 표시명에 ETF임을 밝힌다.
+구리는 Twelve Data 구리 현물 `HG1` 일일 마감(`TDCU`, USD/lb)이며 금과 같은 일일 경로를 쓴다.
+등록은 [ETF·구리 SQL](migrations/20261125_market_targets_etf_proxies_copper.sql)을 사용한다.
+Twelve Data 요금제에서 ETF·HG1 조회 가능 여부와 HG1 단위는 실제 키로 확인해야 한다.
+
 ## 설정
 
 Twelve Data API 키를 서버 환경변수 `TWELVE_DATA_API_KEY`에 설정한다.

@@ -46,7 +46,7 @@ import java.util.UUID;
 public class DailyOutcomeScheduler {
 
     private static final Set<String> DAILY_CODES =
-            Set.of("USTY", "TDFX", "TDGD", "TDWT", "ECOS");
+            Set.of("USTY", "TDFX", "TDGD", "TDWT", "ECOS", "FRED", "TDCU");
 
     private static final List<Integer> HORIZONS =
             List.of(1, 5, 20);
@@ -556,7 +556,9 @@ public class DailyOutcomeScheduler {
         ZoneId zone = ZoneId.of(market.getTimezone());
 
         if (weekdayMarket(market)) {
-            return date.atTime(15, 30)
+            // FRED index closes: NYSE/Nasdaq regular close. Treasury and ECOS: 15:30 local cut-off.
+            return date.atTime("FRED".equals(market.getCalendarCode()) ? 16 : 15,
+                            "FRED".equals(market.getCalendarCode()) ? 0 : 30)
                     .atZone(zone)
                     .toOffsetDateTime();
         }
@@ -603,7 +605,7 @@ public class DailyOutcomeScheduler {
 
     /** Official daily series published only on weekday trading days (no weekend values). */
     private static boolean weekdayMarket(MarketTarget market) {
-        return "USTY".equals(market.getCalendarCode()) || "ECOS".equals(market.getCalendarCode());
+        return Set.of("USTY", "ECOS", "FRED").contains(market.getCalendarCode());
     }
 
     private static boolean isWeekday(LocalDate date) {

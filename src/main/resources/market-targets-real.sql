@@ -30,3 +30,35 @@ WHERE NOT EXISTS (SELECT 1 FROM market_targets WHERE code='KOSDAQ' OR id=X'ddddd
 INSERT INTO market_targets (id,code,display_name,market_category,target_type,direction_labels,unit,calendar_code,timezone,data_symbol,is_active,created_at,updated_at)
 SELECT X'eeeeeeeeeeee4eee8eeeeeeeeeeeeeee','KR3Y','한국 3년물 국고채 금리 (한국은행 일일 기준)','rate','yield','{"up":"금리 상승","down":"금리 하락","neutral":"큰 방향성 없음"}','%','ECOS','Asia/Seoul','817Y002/010200000',true,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
 WHERE NOT EXISTS (SELECT 1 FROM market_targets WHERE code='KR3Y' OR id=X'eeeeeeeeeeee4eee8eeeeeeeeeeeeeee');
+
+INSERT INTO market_targets (id,code,display_name,market_category,target_type,direction_labels,unit,calendar_code,timezone,data_symbol,is_active,created_at,updated_at)
+SELECT X'985982483b224803a862c733d894f89c','SPX','S&P 500','us_equity','index','{"up":"상승","down":"하락","neutral":"큰 방향성 없음"}','point','FRED','America/New_York','SP500',true,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+WHERE NOT EXISTS (SELECT 1 FROM market_targets WHERE code='SPX' OR id=X'985982483b224803a862c733d894f89c');
+
+INSERT INTO market_targets (id,code,display_name,market_category,target_type,direction_labels,unit,calendar_code,timezone,data_symbol,is_active,created_at,updated_at)
+SELECT X'2f1cc2d89505497789b56d88e75414df','NASDAQ100','NASDAQ 100','us_equity','index','{"up":"상승","down":"하락","neutral":"큰 방향성 없음"}','point','FRED','America/New_York','NASDAQ100',true,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+WHERE NOT EXISTS (SELECT 1 FROM market_targets WHERE code='NASDAQ100' OR id=X'2f1cc2d89505497789b56d88e75414df');
+
+INSERT INTO market_targets (id,code,display_name,market_category,target_type,direction_labels,unit,calendar_code,timezone,data_symbol,is_active,created_at,updated_at)
+SELECT X'bc7c7d961e0a4254940e73fec0241ad6','XLE','미국 에너지 섹터 ETF (XLE)','sector','etf','{"up":"상승","down":"하락","neutral":"큰 방향성 없음"}','USD','ARCX','America/New_York','XLE',true,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+WHERE NOT EXISTS (SELECT 1 FROM market_targets WHERE code='XLE' OR id=X'bc7c7d961e0a4254940e73fec0241ad6');
+
+INSERT INTO market_targets (id,code,display_name,market_category,target_type,direction_labels,unit,calendar_code,timezone,data_symbol,is_active,created_at,updated_at)
+SELECT X'6013318a277f4d45804e52716fb2291b','XLF','미국 금융 섹터 ETF (XLF)','sector','etf','{"up":"상승","down":"하락","neutral":"큰 방향성 없음"}','USD','ARCX','America/New_York','XLF',true,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+WHERE NOT EXISTS (SELECT 1 FROM market_targets WHERE code='XLF' OR id=X'6013318a277f4d45804e52716fb2291b');
+
+INSERT INTO market_targets (id,code,display_name,market_category,target_type,direction_labels,unit,calendar_code,timezone,data_symbol,is_active,created_at,updated_at)
+SELECT X'de8f2c5d77ed4399bacde748eaec9f7e','IWM','Russell 2000 추종 ETF (IWM)','us_equity','etf','{"up":"상승","down":"하락","neutral":"큰 방향성 없음"}','USD','ARCX','America/New_York','IWM',true,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+WHERE NOT EXISTS (SELECT 1 FROM market_targets WHERE code='IWM' OR id=X'de8f2c5d77ed4399bacde748eaec9f7e');
+
+INSERT INTO market_targets (id,code,display_name,market_category,target_type,direction_labels,unit,calendar_code,timezone,data_symbol,is_active,created_at,updated_at)
+SELECT X'722a021c991a4b788823432be54e088c','SOXX','필라델피아 반도체지수 추종 ETF (SOXX)','sector','etf','{"up":"상승","down":"하락","neutral":"큰 방향성 없음"}','USD','XNAS','America/New_York','SOXX',true,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+WHERE NOT EXISTS (SELECT 1 FROM market_targets WHERE code='SOXX' OR id=X'722a021c991a4b788823432be54e088c');
+
+INSERT INTO market_targets (id,code,display_name,market_category,target_type,direction_labels,unit,calendar_code,timezone,data_symbol,is_active,created_at,updated_at)
+SELECT X'497560f69c59496190b431c9f2740ff4','UUP','달러 인덱스 추종 ETF (UUP)','fx','etf','{"up":"상승","down":"하락","neutral":"큰 방향성 없음"}','USD','ARCX','America/New_York','UUP',true,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+WHERE NOT EXISTS (SELECT 1 FROM market_targets WHERE code='UUP' OR id=X'497560f69c59496190b431c9f2740ff4');
+
+INSERT INTO market_targets (id,code,display_name,market_category,target_type,direction_labels,unit,calendar_code,timezone,data_symbol,is_active,created_at,updated_at)
+SELECT X'4983f57f0c694e4b8d3fab08912f7b4b','COPPER','구리 현물 (제공처 일일 마감)','commodity','commodity','{"up":"상승","down":"하락","neutral":"큰 방향성 없음"}','USD/lb','TDCU','Australia/Sydney','HG1',true,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+WHERE NOT EXISTS (SELECT 1 FROM market_targets WHERE code='COPPER' OR id=X'4983f57f0c694e4b8d3fab08912f7b4b');

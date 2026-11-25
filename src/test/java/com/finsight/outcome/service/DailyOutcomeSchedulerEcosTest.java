@@ -44,4 +44,16 @@ class DailyOutcomeSchedulerEcosTest {
         assertEquals(LocalDate.parse("2026-11-30"), scheduler.estimateDate(market, LocalDate.parse("2026-11-27"), 1));
         assertEquals(LocalDate.parse("2026-12-04"), scheduler.estimateDate(market, LocalDate.parse("2026-11-27"), 5));
     }
+
+    @Test void fredBaselineUsesNewYorkRegularClose() {
+        MarketTarget market = mock(MarketTarget.class);
+        when(market.getCalendarCode()).thenReturn("FRED");
+        when(market.getTimezone()).thenReturn("America/New_York");
+        ZoneId ny = ZoneId.of("America/New_York");
+        assertEquals(LocalDate.parse("2026-11-24"), scheduler.firstDate(market,
+                LocalDate.parse("2026-11-24").atTime(15, 59).atZone(ny).toOffsetDateTime()));
+        assertEquals(LocalDate.parse("2026-11-25"), scheduler.firstDate(market,
+                LocalDate.parse("2026-11-24").atTime(16, 0).atZone(ny).toOffsetDateTime()));
+        assertEquals(LocalDate.parse("2026-11-30"), scheduler.estimateDate(market, LocalDate.parse("2026-11-27"), 1));
+    }
 }

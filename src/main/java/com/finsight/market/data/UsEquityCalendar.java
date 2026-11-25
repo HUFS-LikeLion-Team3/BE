@@ -5,6 +5,7 @@ import java.util.*;
 import com.finsight.market.data.MarketDataProvider.*;
 
 /** Published 2026 cash-equity schedule, not a weekday approximation.
+ * ARCX (NYSE Arca) follows the NYSE holiday and early-close schedule for its core session.
  * Sources: https://www.nasdaqtrader.com/Trader.aspx?id=Calendar
  *          https://www.nyse.com/trade/hours-calendars
  * Dates outside the published version must use a provider schedule.
@@ -20,7 +21,7 @@ final class UsEquityCalendar {
             LocalDate.parse("2026-11-27"), LocalDate.parse("2026-12-24"));
 
     static Optional<Session> session(String mic, ZoneId zone, LocalDate date) {
-        if (!Set.of("XNAS", "XNYS").contains(mic) || date.getYear() != 2026) return Optional.empty();
+        if (!Set.of("XNAS", "XNYS", "ARCX").contains(mic) || date.getYear() != 2026) return Optional.empty();
         if (!NEW_YORK.equals(zone)) throw new DataException(Status.unavailable);
         if (date.getDayOfWeek() == DayOfWeek.SATURDAY || date.getDayOfWeek() == DayOfWeek.SUNDAY
                 || HOLIDAYS.contains(date)) return Optional.of(new Session(date, zone, null, null));

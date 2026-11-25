@@ -56,7 +56,7 @@ public class FredClient implements DailyObservationProvider {
             csv = client.get().uri(builder -> builder.path("/graph/fredgraph.csv")
                             .queryParam("id", target.getDataSymbol())
                             .queryParam("cosd", from.toString()).queryParam("coed", through.toString()).build())
-                    .header("User-Agent", "FinSight/1.0")
+                    // FRED's edge resets connections for some custom user agents; keep the HTTP client default.
                     .retrieve().body(String.class);
         } catch (RestClientResponseException e) {
             int code = e.getStatusCode().value();

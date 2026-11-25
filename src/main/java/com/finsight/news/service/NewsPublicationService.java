@@ -7,7 +7,9 @@ import com.finsight.market.entity.MarketTarget;
 import com.finsight.news.dto.NewsPublicationRequest;
 import com.finsight.news.dto.NewsResponses.Detail;
 import com.finsight.news.entity.News;
+import com.finsight.news.entity.NewsFact;
 import com.finsight.news.entity.NewsTargetCandidate;
+import com.finsight.news.repository.NewsFactRepository;
 import com.finsight.news.repository.NewsTargetCandidateRepository;
 import jakarta.persistence.EntityManager;
 import java.net.URI;
@@ -36,14 +38,16 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class NewsPublicationService {
     private final EntityManager entityManager;
     private final NewsTargetCandidateRepository candidates;
+    private final NewsFactRepository facts;
     private final TransactionTemplate transaction;
     private final Set<UUID> adminUserIds;
 
     public NewsPublicationService(EntityManager entityManager, NewsTargetCandidateRepository candidates,
-                                  PlatformTransactionManager manager,
+                                  NewsFactRepository facts, PlatformTransactionManager manager,
                                   @Value("${finsight.news-admin.user-ids:}") String adminUserIds) {
         this.entityManager = entityManager;
         this.candidates = candidates;
+        this.facts = facts;
         this.transaction = new TransactionTemplate(manager);
         this.adminUserIds = Arrays.stream(adminUserIds.split(",")).map(String::strip)
                 .filter(id -> !id.isEmpty()).map(UUID::fromString).collect(Collectors.toUnmodifiableSet());
@@ -62,20 +66,25 @@ public class NewsPublicationService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "같은 관측 지표를 중복 선택할 수 없습니다.");
         }
 
+        List<NewsPublicationRequest.Fact> normalizedFacts = request.facts().stream()
+                .map(fact -> new NewsPublicationRequest.Fact(fact.label().strip(), fact.valueText().strip(),
+                        optionalText(fact.unit()), fact.asOfAt().truncatedTo(ChronoUnit.SECONDS)))
+                .toList();
         String contentHash = digest(request.source().excerpt().strip());
         try {
             return transaction.execute(status -> {
-                Detail published = findExisting(request, contentHash);
-                return published != null ? published : insert(request, contentHash, targetIds);
+                Detail published = findExisting(request, contentHash, normalizedFacts);
+                return published != null ? published : insert(request, contentHash, targetIds, normalizedFacts);
             });
         } catch (DataIntegrityViolationException | ConstraintViolationException conflict) {
-            Detail published = transaction.execute(status -> findExisting(request, contentHash));
+            Detail published = transaction.execute(status -> findExisting(request, contentHash, normalizedFacts));
             if (published != null) return published;
             throw new ApiException(HttpStatus.CONFLICT, "이미 등록된 원문이거나 등록 정보가 충돌합니다.");
         }
     }
 
-    private Detail insert(NewsPublicationRequest request, String contentHash, List<UUID> targetIds) {
+    private Detail insert(NewsPublicationRequest request, String contentHash, List<UUID> targetIds,
+                          List<NewsPublicationRequest.Fact> normalizedFacts) {
         List<MarketTarget> targets = targetIds.stream().map(id -> {
             MarketTarget target = entityManager.find(MarketTarget.class, id);
             if (target == null || !target.isActive()) {
@@ -87,16 +96,23 @@ public class NewsPublicationService {
         Instant now = Instant.now();
         Instant publishedAt = request.publishedAt().truncatedTo(ChronoUnit.SECONDS);
         News news = News.publishLive(request.title().strip(), request.category(), request.briefing().strip(),
-                publishedAt, referenceAt(request), now);
+                optionalText(request.backgroundContext()), publishedAt, referenceAt(request), now);
         entityManager.persist(news);
 
         var source = request.source();
-        entityManager.persist(FeedbackSourceDocument.primaryNewsSource(request.requestId(), news,
+        var document = FeedbackSourceDocument.primaryNewsSource(request.requestId(), news,
                 source.type().name(), source.type().tier(), source.publisher().strip(), source.url().strip(),
-                publishedAt.atOffset(ZoneOffset.UTC), contentHash, now));
+                optionalText(source.publicSummary()), publishedAt.atOffset(ZoneOffset.UTC), contentHash, now);
+        entityManager.persist(document);
         entityManager.flush();
         entityManager.persist(new FeedbackSourceDocumentChunk(request.requestId(), source.excerpt().strip(),
                 now.atOffset(ZoneOffset.UTC)));
+
+        for (int index = 0; index < normalizedFacts.size(); index++) {
+            var fact = normalizedFacts.get(index);
+            entityManager.persist(new NewsFact(news.getId(), fact.label(), fact.valueText(), fact.unit(),
+                    fact.asOfAt(), index + 1, document));
+        }
 
         for (int index = 0; index < targets.size(); index++) {
             entityManager.persist(new NewsTargetCandidate(news, targets.get(index), index + 1,
@@ -105,7 +121,8 @@ public class NewsPublicationService {
         return Detail.from(news);
     }
 
-    private Detail findExisting(NewsPublicationRequest request, String contentHash) {
+    private Detail findExisting(NewsPublicationRequest request, String contentHash,
+                                List<NewsPublicationRequest.Fact> normalizedFacts) {
         var source = entityManager.find(FeedbackSourceDocument.class, request.requestId());
         if (source == null) return null;
 
@@ -115,11 +132,17 @@ public class NewsPublicationService {
                 && Objects.equals(source.getUrl(), input.url().strip())
                 && Objects.equals(source.getPublisher(), input.publisher().strip())
                 && Objects.equals(source.getSourceType(), input.type().name())
+                && Objects.equals(source.getPublicSummary(), optionalText(input.publicSummary()))
                 && Objects.equals(news.getTitle(), request.title().strip())
                 && Objects.equals(news.getCategory(), request.category())
                 && Objects.equals(news.getBriefing(), request.briefing().strip())
+                && Objects.equals(news.getBackgroundContext(), optionalText(request.backgroundContext()))
                 && Objects.equals(news.getPublishedAt(), request.publishedAt().truncatedTo(ChronoUnit.SECONDS))
                 && Objects.equals(news.getReferenceAt(), referenceAt(request))
+                && facts.findByNewsIdOrderBySortOrderAscIdAsc(news.getId()).stream()
+                        .map(fact -> new NewsPublicationRequest.Fact(
+                                fact.getLabel(), fact.getValueText(), fact.getUnit(), fact.getAsOfAt()))
+                        .toList().equals(normalizedFacts)
                 && candidates.findCandidates(news.getId()).stream()
                         .map(candidate -> new NewsPublicationRequest.Target(candidate.getTarget().getId(), candidate.getRationale()))
                         .toList().equals(request.targets().stream()
@@ -127,6 +150,10 @@ public class NewsPublicationService {
             return Detail.from(news);
         }
         throw new ApiException(HttpStatus.CONFLICT, "이미 사용된 등록 요청입니다.");
+    }
+
+    private static String optionalText(String value) {
+        return value == null || value.isBlank() ? null : value.strip();
     }
 
     private static Instant referenceAt(NewsPublicationRequest request) {

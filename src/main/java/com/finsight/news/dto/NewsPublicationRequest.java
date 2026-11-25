@@ -15,16 +15,30 @@ public record NewsPublicationRequest(
         @NotBlank @Size(max = 255) String title,
         @NotBlank @Pattern(regexp = "rate|exchange_rate|semiconductor|energy|price|employment") String category,
         @NotBlank @Size(max = 8000) String briefing,
+        @Size(max = 8000) String backgroundContext,
+        @Size(max = 10) List<@NotNull @Valid Fact> facts,
         @NotNull @PastOrPresent Instant publishedAt,
         @PastOrPresent Instant referenceAt,
         @NotNull @Valid Source source,
         @NotNull @Size(min = 1, max = 3) List<@NotNull @Valid Target> targets
 ) {
+    public NewsPublicationRequest {
+        if (facts == null) facts = List.of();
+    }
+
+    public record Fact(
+            @NotBlank @Size(max = 255) String label,
+            @NotBlank @Size(max = 255) String valueText,
+            @Size(max = 255) String unit,
+            @NotNull @PastOrPresent Instant asOfAt
+    ) {}
+
     public record Source(
             @NotBlank @Size(max = 255) String publisher,
             @NotBlank @Size(max = 255) String url,
             @NotNull SourceType type,
-            @NotBlank @Size(max = 8000) String excerpt
+            @NotBlank @Size(max = 8000) String excerpt,
+            @Size(max = 2000) String publicSummary
     ) {}
 
     public record Target(@NotNull UUID marketTargetId, @NotBlank @Size(max = 1000) String rationale) {}

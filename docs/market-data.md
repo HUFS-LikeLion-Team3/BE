@@ -29,6 +29,40 @@ DB 테이블을 추가하거나 세션 T0·시장 관측을 저장하지 않는�
 market-data 프로필은 AAPL, KOSPI, US10Y, USDKRW, GOLD, WTI의 실제 대상 메타데이터를 등록한다.
 가격은 SQL로 넣지 않는다. 기존 샘플 대상은 별도로 유지한다.
 
+## 운영 DB 대상 추가 (2026-11-25)
+
+운영 DB에는 2026-11-14에 NASDAQ100·US10Y만 등록됐다. 원/달러·금·WTI는
+[대상 추가 SQL](migrations/20261125_market_targets_fx_gold_wti.sql)로 추가한다. 반복 실행해도 중복되지 않으며
+기존 대상은 US10Y 방향 문구 외에는 바꾸지 않는다. 방향 문구는 화면 명세 1.3에 맞춰
+환율은 `환율 상승(원화 약세)`/`환율 하락(원화 강세)`, 금리는 `금리 상승`/`금리 하락`이다.
+AI 자료 패키지의 marketSearchTerms에 없는 대상은 AI 피드백 요청이 거절되므로 패키지 갱신·재등록과 함께 실행한다.
+
+## 한국 시장 (ECOS, 2026-11-25)
+
+KOSPI·KOSDAQ·한국 3년물은 `EcosClient`가 한국은행 ECOS `StatisticSearch` API의 일별 통계를 조회한다.
+`dataSymbol`은 `통계표코드/항목코드`, `calendarCode`는 내부 분류 코드 `ECOS`(거래소 MIC 아님)이다.
+서버 환경변수 `ECOS_API_KEY`가 필요하며(ECOS 회원가입 후 무료 발급), 없으면 unavailable이다.
+ECOS는 키를 URL 경로로 받으므로 요청 URL을 로그로 남기지 않는다.
+실제 게시된 평일 값만 사용하고 휴장일 값을 만들지 않는다. 기준 시각은 KRX 정규장 종료인 15:30 KST다.
+결과 수집은 US10Y와 같이 평일 기준으로 예정일을 계산하고 실제 게시 관측을 센다.
+등록은 [한국 시장 추가 SQL](migrations/20261125_market_targets_korea_ecos.sql)을 사용한다.
+
+## 미국 지수·섹터 ETF (2026-11-25)
+
+Twelve Data 공개 목록에는 SPX·NDX 지수가 없어 지수는 `FredClient`가 FRED 공개 CSV(`fredgraph.csv`, 키 불필요)에서
+S&P 500(`SP500`)·NASDAQ 100(`NASDAQ100`) 일별 종가를 조회한다. `calendarCode`는 내부 분류 코드 `FRED`이며
+빈 값(휴장일)은 건너뛰고, 기준 시각은 뉴욕 16:00이다. FRED는 빈 기간을 요청하면 전체 시리즈를 주므로 요청 기간만 남긴다.
+섹터 ETF XLE·XLF는 Twelve Data의 NYSE Arca(`ARCX`) 종가를 쓰며, 2026 공식 NYSE 일정을 ARCX에도 적용한다.
+등록은 [미국 지수·ETF SQL](migrations/20261125_market_targets_us_fred_etf.sql)을 사용하며, 기존 NASDAQ100(NDX/XNAS)은 FRED로 전환된다.
+
+## 지수 대체 ETF·구리 (2026-11-25)
+
+공개 무료 지수 시세가 없는 Russell 2000·필라델피아 반도체지수·달러 인덱스는 사용자 결정에 따라 추종 ETF로 제공한다.
+IWM·UUP는 Twelve Data NYSE Arca(`ARCX`), SOXX는 Nasdaq(`XNAS`, 응답 MIC `XNMS` 허용) 정규 종가다. 표시명에 ETF임을 밝힌다.
+구리는 Twelve Data 현물 `HG1`이 Grow 이상 요금제에서만 조회돼(2026-11-25 운영 키로 404 확인) 추종 ETF CPER(`ARCX`)을 쓴다. `TDCU`(HG1) 경로는 요금제 변경 시를 위해 남겨 둔다.
+등록은 [ETF·구리 SQL](migrations/20261125_market_targets_etf_proxies_copper.sql)을 사용한다.
+2026-11-25 운영 키로 USD/KRW·XAU/USD·XLE·XLF·IWM·SOXX(XNMS)·UUP 일봉 조회를 확인했다.
+
 ## 설정
 
 Twelve Data API 키를 서버 환경변수 `TWELVE_DATA_API_KEY`에 설정한다.
@@ -73,7 +107,9 @@ market-data 프로필에서 AAPL이 없으면 `77777777-7777-4777-8777-777777777
 | 코드 | 조회 심볼 / 캘린더 | 단위 | 가격 기준 |
 | --- | --- | --- | --- |
 | AAPL | AAPL / XNAS | USD | 미국 주식 정규 종가 |
-| KOSPI | KS11 / XKRX | point | 코스피 정규 종가 |
+| KOSPI | 802Y001/0001000 / ECOS | point | 한국은행 ECOS 주식시장(일) KOSPI지수 |
+| KOSDAQ | 802Y001/0089000 / ECOS | point | 한국은행 ECOS 주식시장(일) KOSDAQ지수 |
+| KR3Y | 817Y002/010200000 / ECOS | % | 한국은행 ECOS 시장금리(일별) 국고채(3년) |
 | US10Y | BC_10YEAR / USTY | % | 미국 재무부 공식 10년 constant-maturity par yield |
 | USDKRW | USD/KRW / TDFX | KRW | 1 USD당 KRW, 제공처 일일 마감 |
 | GOLD | XAU/USD / TDGD | USD/troy_oz | 금 현물 트로이온스당 USD, 제공처 일일 마감 |

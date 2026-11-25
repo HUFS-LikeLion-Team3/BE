@@ -54,7 +54,7 @@ public class TwelveDataClient implements MarketDataProvider, DailyObservationPro
     @Override public String sourceUrl() { return "https://twelvedata.com"; }
 
     @Override public boolean supports(MarketTarget target) {
-        return Set.of("TDFX", "TDGD").contains(target.getCalendarCode());
+        return Set.of("TDFX", "TDGD", "TDCU").contains(target.getCalendarCode());
     }
 
     @Override public List<Observation> observations(MarketTarget target, LocalDate through, int days) {
@@ -62,12 +62,14 @@ public class TwelveDataClient implements MarketDataProvider, DailyObservationPro
         String expectedSymbol = switch (target.getCalendarCode()) {
             case "TDFX" -> "USD/KRW";
             case "TDGD" -> "XAU/USD";
+            case "TDCU" -> "HG1";
             case "TDWT" -> "WTI/USD";
             default -> throw new DataException(Status.unavailable);
         };
         String expectedUnit = switch (target.getCalendarCode()) {
             case "TDFX" -> "KRW";
             case "TDGD" -> "USD/troy_oz";
+            case "TDCU" -> "USD/lb";
             default -> "USD/barrel";
         };
         var zone = ZoneId.of("Australia/Sydney");
@@ -161,7 +163,7 @@ public class TwelveDataClient implements MarketDataProvider, DailyObservationPro
 
     private boolean matchesMarket(String calendarCode, String returnedMic) {
         return calendarCode.equals(returnedMic)
-                || ("XNAS".equals(calendarCode) && "XNGS".equals(returnedMic));
+                || ("XNAS".equals(calendarCode) && Set.of("XNGS", "XNMS").contains(returnedMic));
     }
 
     @Override public Session session(String calendarCode, ZoneId timezone, LocalDate date) {

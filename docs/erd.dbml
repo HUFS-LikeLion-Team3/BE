@@ -233,6 +233,8 @@ Table news {
 
   briefing text [not null]
 
+  background_context text
+
   published_at timestamptz [not null]
 
   reference_at timestamptz [not null]
@@ -271,6 +273,8 @@ Table source_documents {
   title varchar [not null]
 
   url varchar [not null]
+
+  public_summary text [note: '뉴스 상세에 표시할 출처 요약']
 
   published_at timestamptz [not null, note: '승인 완료 자료는 공개 시각 필수']
 

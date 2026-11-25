@@ -24,7 +24,7 @@ public class FeedbackSourceDocument {
 
     public static FeedbackSourceDocument primaryNewsSource(
             UUID id, com.finsight.news.entity.News news, String sourceType, String selectionTier,
-            String publisher, String url, OffsetDateTime publishedAt, String contentHash,
+            String publisher, String url, String publicSummary, OffsetDateTime publishedAt, String contentHash,
             java.time.Instant retrievedAt) {
         FeedbackSourceDocument source = new FeedbackSourceDocument();
         source.id = id;
@@ -35,6 +35,7 @@ public class FeedbackSourceDocument {
         source.publisher = publisher;
         source.title = news.getTitle();
         source.url = url;
+        source.publicSummary = publicSummary;
         source.publishedAt = publishedAt;
         source.availableAt = publishedAt;
         source.contentHash = contentHash;
@@ -82,6 +83,9 @@ public class FeedbackSourceDocument {
 
     @Column(nullable = false)
     private String url;
+
+    @Column(name = "public_summary", columnDefinition = "TEXT")
+    private String publicSummary;
 
     @Column(name = "published_at", nullable = false)
     private OffsetDateTime publishedAt;

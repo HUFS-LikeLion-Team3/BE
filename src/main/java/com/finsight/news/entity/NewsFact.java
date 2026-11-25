@@ -1,5 +1,6 @@
 package com.finsight.news.entity;
 
+import com.finsight.feedback.entity.FeedbackSourceDocument;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -20,7 +21,7 @@ public class NewsFact {
     private News news;
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "source_document_id")
-    private com.finsight.feedback.entity.FeedbackSourceDocument sourceDocument;
+    private FeedbackSourceDocument sourceDocument;
     @Column(nullable = false)
     private String label;
     @Column(name = "value_text", nullable = false)
@@ -32,7 +33,13 @@ public class NewsFact {
     private int sortOrder;
 
     public NewsFact(UUID newsId, String label, String valueText, String unit, Instant asOfAt, int sortOrder) {
+        this(newsId, label, valueText, unit, asOfAt, sortOrder, null);
+    }
+
+    public NewsFact(UUID newsId, String label, String valueText, String unit, Instant asOfAt, int sortOrder,
+                    FeedbackSourceDocument sourceDocument) {
         this.newsId = newsId;
+        this.sourceDocument = sourceDocument;
         this.label = label;
         this.valueText = valueText;
         this.unit = unit;

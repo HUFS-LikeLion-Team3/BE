@@ -65,7 +65,7 @@ public class LearningSessionService {
             return new SessionResult(session, false);
         }
 
-        News news = newsRepository.findByIdAndStatus(newsId, "published")
+        News news = newsRepository.findPublishedForSessionCreation(newsId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
                         "해당 뉴스를 찾을 수 없습니다."));
         if (!requestedType.name().equals(news.getContentType())

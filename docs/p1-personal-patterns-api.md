@@ -196,3 +196,27 @@
 - 로컬 테스트: `./gradlew test --tests 'com.finsight.pattern.*'` 및 `./gradlew test` **사용자 환경에서 모두 통과(2026-11-14)**.
 - 실제 API 호출(동일 카카오 테스트 계정): `reasons`는 예측 6건, 최종 회고 1건 및 빈 변수 배열로 HTTP 200; `suggestions`는 `insufficientData=true`, 빈 제안으로 HTTP 200. **이 계정은 5개 뉴스 조건을 충족하지 않아** 데이터 부족 경로만 통합 확인했다.
 - 5개 이상 서로 다른 뉴스에서 변수 추출과 실제 제안이 생성되는 **실DB 통합 시나리오는 아직 미검증**이고, 관련 규칙은 단위 테스트로 확인했다.
+
+## GET /api/v1/users/me/patterns/outcomes — 관측 결과 사례 비교
+
+- Query: `market` (필수, `market_targets.market_category` 값: `korea_equity`, `us_equity`, `rate`, `fx` 등), `horizon` (필수, 1·5·20). 누락·범위 밖이면 **400**.
+- 로그인 사용자의 제출된 예측 중 같은 시장 범주·기간에 **확정(`ready`) 관측값**이 있는 기록만 읽는다. Replay 세션은 결과 공개(`results_revealed_at`) 이후에만 포함한다.
+- 같은 뉴스는 1개로 센다. 한 뉴스에 여러 세션·대상이 있으면 가장 최근 제출 세션의 첫 번째 대상을 사례로 쓴다.
+- `stage`: 서로 다른 뉴스 3개 미만 `insufficient`(`cases=[]`), 3~4개 `initial_observation`, 5개 이상 `repeated_tendency`.
+- 사례마다 예측 방향·판단 이유, 기준일·기준값, 관측일·관측값, 변화량(`changeValue`)·변화율(`changePercent`), 최종 회고 원문 1개(learned → missed_variable → next_check 순, 해당 대상 또는 세션 전체 회고)를 돌려준다. 회고가 없으면 `reflection=null`.
+- **적중 여부·점수·승률은 계산하지 않는다.** DB 스키마 변경 없음.
+
+```json
+{
+  "market": "us_equity", "horizon": 5, "distinctNewsCount": 3,
+  "minimumNewsCount": 3, "repeatedNewsCount": 5, "stage": "initial_observation",
+  "cases": [{
+    "sessionId": "…", "newsId": "…", "newsTitle": "연준, 기준금리 0.25%p 인상… 3.75~4.00%로",
+    "targetCode": "NASDAQ100", "targetName": "NASDAQ 100", "unit": "point",
+    "direction": "down", "reason": "…",
+    "baselineDate": "2026-09-16", "baselineValue": 28945.0,
+    "observationDate": "2026-09-23", "observedValue": 30470.0,
+    "changeValue": 1525.0, "changePercent": 5.27, "reflection": "…"
+  }]
+}
+```

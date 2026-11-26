@@ -188,6 +188,17 @@ public class AiFeedback {
         this.generatedAt = null;
     }
 
+    /** Admin retry only: a failed feedback goes back to generating to await the AI job again. */
+    public void reopenFailedForRetry() {
+        if (status != FeedbackStatus.failed) {
+            throw new IllegalStateException("Only failed feedback can be retried.");
+        }
+        status = FeedbackStatus.generating;
+        failureCode = null;
+        generatedAt = null;
+        retryCount = retryCount == null ? 1 : retryCount + 1;
+    }
+
     public void markNotLatest() {
         this.isLatest = false;
     }

@@ -174,7 +174,7 @@ public class DailyOutcomeScheduler {
     ) {
         UUID sessionId = session.getId();
         UUID targetId = selected.getId();
-        boolean replay = session.getSessionType() == LearningSession.SessionType.replay;
+        boolean replay = session.getReplayReferenceAt() != null;
 
         SessionTargetBaseline baseline = baselineRepository
                 .findBySessionTargetId(targetId)

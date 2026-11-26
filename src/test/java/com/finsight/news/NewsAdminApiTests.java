@@ -138,6 +138,15 @@ class NewsAdminApiTests {
                 .andExpect(status().isBadRequest());
         assertEquals(before, news.count());
 
+        String futureFact = body.replace("\"source\": {", """
+                "facts": [{"label": "수출액", "valueText": "774", "asOfAt": "2025-11-20T00:00:01Z"}],
+                "source": {
+                """);
+        mvc.perform(post("/api/v1/admin/news").header("Authorization", token)
+                .contentType(MediaType.APPLICATION_JSON).content(futureFact))
+                .andExpect(status().isBadRequest());
+        assertEquals(before, news.count());
+
         String response = mvc.perform(post("/api/v1/admin/news").header("Authorization", token)
                 .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();

@@ -42,11 +42,11 @@ public class FeedbackAdminRetryService {
                     .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "피드백을 찾을 수 없습니다."));
             AiRagJob job = jobRepository.findById(feedbackId)
                     .orElseThrow(() -> new ApiException(HttpStatus.CONFLICT, "AI 작업이 없는 피드백은 재시도할 수 없습니다."));
-            if (feedback.getStatus() != AiFeedback.FeedbackStatus.failed) {
-                throw new ApiException(HttpStatus.CONFLICT, "실패한 피드백만 재시도할 수 있습니다.");
-            }
-            if (job.getJobId() == null || !"accepted".equals(job.getState())) {
-                throw new ApiException(HttpStatus.CONFLICT, "AI가 접수한 작업만 재시도할 수 있습니다.");
+            boolean failed = feedback.getStatus() == AiFeedback.FeedbackStatus.failed
+                    && "accepted".equals(job.getState());
+            if (job.getJobId() == null || !failed && !aiReconciliation(feedback, job)) {
+                throw new ApiException(HttpStatus.CONFLICT,
+                        "실패했거나 AI 응답 확인이 필요한 접수 작업만 재시도할 수 있습니다.");
             }
             return job.getJobId();
         });
@@ -73,10 +73,21 @@ public class FeedbackAdminRetryService {
             if (feedback.getStatus() == AiFeedback.FeedbackStatus.failed) {
                 feedback.reopenFailedForRetry();
             }
-            job.updateStatus(reopenedStatus, null);
+            if ("reconciliation_required".equals(job.getState())) {
+                job.reopenAfterAiOperatorRetry(reopenedStatus);
+            } else {
+                job.updateStatus(reopenedStatus, null);
+            }
         });
         log.info("AI feedback retry requested by admin. feedbackId={}, aiStatus={}", feedbackId, reopenedStatus);
         return new Result(feedbackId, "generating", reopenedStatus);
+    }
+
+    /** The AI asked for reconciliation (e.g. provider timeout) while BE was still waiting. */
+    private static boolean aiReconciliation(AiFeedback feedback, AiRagJob job) {
+        return feedback.getStatus() == AiFeedback.FeedbackStatus.generating
+                && "reconciliation_required".equals(job.getState())
+                && "ai_reconciliation_required".equals(job.getFailureCode());
     }
 
     public record Result(UUID feedbackId, String status, String aiStatus) {}

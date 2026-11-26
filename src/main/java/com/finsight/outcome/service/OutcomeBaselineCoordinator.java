@@ -266,7 +266,7 @@ public class OutcomeBaselineCoordinator {
             ZoneId timezone = ZoneId.of(target.getTimezone());
             // A Replay is submitted today but its historical T0 deadline has
             // already passed. Check the old sessions *before* expiring it.
-            boolean replay = session.getSessionType() == LearningSession.SessionType.replay;
+            boolean replay = session.getReplayReferenceAt() != null;
 
             LocalDate today = clock.instant()
                     .atZone(timezone)

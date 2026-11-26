@@ -121,8 +121,7 @@ public class FeedbackGenerationInputBuilder {
                         )
                 );
 
-        boolean historical = !includeResults
-                && session.getSessionType() == LearningSession.SessionType.replay;
+        boolean historical = !includeResults && session.getReplayReferenceAt() != null;
         if (historical && (session.getReplayReferenceAt() == null
                 || !session.getReplayReferenceAt().isEqual(cutoff)
                 || news.getPublishedAt() == null

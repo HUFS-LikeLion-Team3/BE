@@ -82,6 +82,29 @@ class FeedbackAdminRetryServiceTest {
     }
 
     @Test
+    void reopensJobThatAiSentToReconciliationAfterTimeout() {
+        when(feedback.getStatus()).thenReturn(AiFeedback.FeedbackStatus.generating);
+        when(job.getState()).thenReturn("reconciliation_required");
+        when(job.getFailureCode()).thenReturn("ai_reconciliation_required");
+        when(client.retryFailedJob(jobId, adminId, "타임아웃")).thenReturn(Map.of("status", "pending"));
+
+        service.retry(feedbackId, adminId, "타임아웃");
+
+        verify(feedback, never()).reopenFailedForRetry();
+        verify(job).reopenAfterAiOperatorRetry("pending");
+    }
+
+    @Test
+    void rejectsBeSideReconciliation() {
+        when(feedback.getStatus()).thenReturn(AiFeedback.FeedbackStatus.generating);
+        when(job.getState()).thenReturn("reconciliation_required");
+        when(job.getFailureCode()).thenReturn("approved_result_invalid_json");
+
+        assertThrows(ApiException.class, () -> service.retry(feedbackId, adminId, "재시도"));
+        verifyNoInteractions(client);
+    }
+
+    @Test
     void rejectsNonFailedFeedbackUnacceptedJobAndBlankReason() {
         assertThrows(ApiException.class, () -> service.retry(feedbackId, adminId, " "));
         when(job.getState()).thenReturn("reconciliation_required");

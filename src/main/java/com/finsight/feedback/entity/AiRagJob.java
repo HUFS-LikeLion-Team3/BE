@@ -259,6 +259,20 @@ public class AiRagJob {
     }
 
     /**
+     * Admin retry only: the AI reopened a job that needed reconciliation only because
+     * its provider call timed out. Polling resumes on the same accepted AI job.
+     */
+    public void reopenAfterAiOperatorRetry(String aiStatus) {
+        if (jobId == null || !"reconciliation_required".equals(state)
+                || !"ai_reconciliation_required".equals(failureCode)) {
+            throw new IllegalStateException("ai_operator_retry_not_reopenable");
+        }
+        this.state = "accepted";
+        this.failureCode = null;
+        this.aiStatus = aiStatus;
+    }
+
+    /**
      * Record polling metadata without changing the
      * identity of an already established RAG snapshot.
      */

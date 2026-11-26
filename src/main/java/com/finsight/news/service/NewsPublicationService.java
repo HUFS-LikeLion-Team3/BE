@@ -66,6 +66,11 @@ public class NewsPublicationService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "같은 관측 지표를 중복 선택할 수 없습니다.");
         }
 
+        Instant publishedAt = request.publishedAt().truncatedTo(ChronoUnit.SECONDS);
+        if (request.facts().stream().anyMatch(fact -> fact.asOfAt().truncatedTo(ChronoUnit.SECONDS).isAfter(publishedAt))) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "사실·수치의 기준 시각은 기사 발행 시각 이후일 수 없습니다.");
+        }
+
         List<NewsPublicationRequest.Fact> normalizedFacts = request.facts().stream()
                 .map(fact -> new NewsPublicationRequest.Fact(fact.label().strip(), fact.valueText().strip(),
                         optionalText(fact.unit()), fact.asOfAt().truncatedTo(ChronoUnit.SECONDS)))

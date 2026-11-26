@@ -408,12 +408,11 @@ public class DailyOutcomeScheduler {
 
             LocalDate actual = published.get(horizon - 1);
 
-            int delay = Math.max(
-                    0,
-                    weekdayMarket(market)
-                            ? weekdaysBetween(expected, actual)
-                            : (int) java.time.temporal.ChronoUnit.DAYS.between(expected, actual)
-            );
+            // Daily official series have no trading-halt concept: a skipped date is a
+            // non-publication day (holiday or weekend), and T{horizon} is already the
+            // horizon-th published session. The expected date is only a weekday/calendar
+            // estimate, so the gap to it is not an observation delay.
+            int delay = 0;
 
             MarketDataProvider.Status status =
                     collectionService.collectObservation(
@@ -583,24 +582,6 @@ public class DailyOutcomeScheduler {
         }
 
         return date;
-    }
-
-    private static int weekdaysBetween(
-            LocalDate start,
-            LocalDate end
-    ) {
-        int count = 0;
-
-        for (LocalDate date = start.plusDays(1);
-             !date.isAfter(end);
-             date = date.plusDays(1)) {
-
-            if (isWeekday(date)) {
-                count++;
-            }
-        }
-
-        return count;
     }
 
     /** Official daily series published only on weekday trading days (no weekend values). */

@@ -126,6 +126,27 @@ public class AiRagJobClient {
         return send("POST", JOBS_PATH + "/" + jobId + "/delivery", body);
     }
 
+    /**
+     * Operator-only reopen of a failed AI job on its frozen snapshot. The AI keeps
+     * every previous attempt and records the admin and reason in its retry history.
+     */
+    public Map<String, Object> retryFailedJob(UUID jobId, UUID adminUserId, String reason) {
+        if (jobId == null || adminUserId == null || reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("AI retry requires job, admin and reason");
+        }
+        String body;
+        try {
+            body = mapper.writeValueAsString(Map.of(
+                    "requestedBy", adminUserId.toString(),
+                    "operatorOverride", true,
+                    "reason", reason.strip()
+            ));
+        } catch (Exception ex) {
+            throw new IllegalStateException("AI retry JSON encoding failed", ex);
+        }
+        return send("POST", JOBS_PATH + "/" + jobId + "/retry", body);
+    }
+
     /** Keep the response exactly as received, rather than reserializing a Map. */
     public String getApprovedResultRaw(UUID jobId) {
         if (jobId == null) {

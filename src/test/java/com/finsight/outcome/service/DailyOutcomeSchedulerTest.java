@@ -145,11 +145,11 @@ class DailyOutcomeSchedulerTest {
         }
 
         verify(collector).collectObservation(
-                sessionId, targetId, 1, published.get(0), 1);
+                sessionId, targetId, 1, published.get(0), 0);
         verify(collector).collectObservation(
-                sessionId, targetId, 5, published.get(4), 1);
+                sessionId, targetId, 5, published.get(4), 0);
         verify(collector).collectObservation(
-                sessionId, targetId, 20, published.get(19), 1);
+                sessionId, targetId, 20, published.get(19), 0);
         verify(collector, times(3)).collectObservation(
                 eq(sessionId), eq(targetId), anyInt(),
                 any(LocalDate.class), anyInt());

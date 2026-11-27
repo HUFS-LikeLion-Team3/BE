@@ -136,20 +136,23 @@ public class PredictionService {
         }
 
         OffsetDateTime submittedAt = OffsetDateTime.now(KOREA_ZONE);
-        OffsetDateTime replayReferenceAt = null;
-        if (session.getSessionType() == LearningSession.SessionType.replay) {
-            News news = entityManager.find(News.class, session.getNewsId());
-            if (news == null || news.getReferenceAt() == null
-                    || news.getReferenceAt().isAfter(submittedAt.toInstant())) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "Replay 뉴스의 과거 기준 시점을 확인할 수 없습니다.");
-            }
-            replayReferenceAt = news.getReferenceAt().atZone(KOREA_ZONE).toOffsetDateTime();
+        OffsetDateTime articleReferenceAt;
+        News news = entityManager.find(News.class, session.getNewsId());
+        if (news == null || news.getReferenceAt() == null
+                || news.getReferenceAt().isAfter(submittedAt.toInstant())) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "기사 기준 시점을 확인할 수 없습니다."
+            );
         }
+        articleReferenceAt = news.getReferenceAt()
+                .atZone(KOREA_ZONE)
+                .toOffsetDateTime();
         for (Prediction prediction : predictions) {
             prediction.markSubmitted(submittedAt);
         }
-        session.markSubmitted(submittedAt, replayReferenceAt);
-        if (replayReferenceAt != null) {
+        session.markSubmitted(submittedAt, articleReferenceAt);
+        if (session.getSessionType() == LearningSession.SessionType.replay) {
             statusService.reconcile(sessionId);
         }
         // Listeners must use @TransactionalEventListener(AFTER_COMMIT) for T0/AI requests.

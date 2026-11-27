@@ -122,6 +122,14 @@ public class DailyOutcomeScheduler {
         }
     }
 
+    /**
+     * Collects one session right away instead of waiting for the next run.
+     * Used for Replay, whose historical values are already published.
+     */
+    public void collectNow(UUID id) {
+        collectSession(id);
+    }
+
     private void collectSession(UUID id) {
         LearningSession session =
                 sessionRepository.findById(id).orElse(null);
